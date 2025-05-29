@@ -316,40 +316,41 @@ Sub CalculateProductivityMetrics()
         Next key
         
         ' Sort by date (ascending) and then by name (alphabetical)
-        Dim i As Long, j As Long
-        Dim tempKey As String, tempDate As Date, tempName As String
-        For i = 1 To UBound(dictItems, 1) - 1
-            For j = i + 1 To UBound(dictItems, 1)
+        Dim sortI As Long, sortJ As Long
+        Dim sortTempKey As String, sortTempDate As Date, sortTempName As String
+        Dim sortedKeys() As Variant
+        For sortI = 1 To UBound(dictItems, 1) - 1
+            For sortJ = sortI + 1 To UBound(dictItems, 1)
                 ' First sort by date
-                If dictItems(i, 2) > dictItems(j, 2) Then
+                If dictItems(sortI, 2) > dictItems(sortJ, 2) Then
                     ' Swap all columns
-                    tempKey = dictItems(i, 1)
-                    tempDate = dictItems(i, 2)
-                    tempName = dictItems(i, 3)
+                    sortTempKey = dictItems(sortI, 1)
+                    sortTempDate = dictItems(sortI, 2)
+                    sortTempName = dictItems(sortI, 3)
                     
-                    dictItems(i, 1) = dictItems(j, 1)
-                    dictItems(i, 2) = dictItems(j, 2)
-                    dictItems(i, 3) = dictItems(j, 3)
+                    dictItems(sortI, 1) = dictItems(sortJ, 1)
+                    dictItems(sortI, 2) = dictItems(sortJ, 2)
+                    dictItems(sortI, 3) = dictItems(sortJ, 3)
                     
-                    dictItems(j, 1) = tempKey
-                    dictItems(j, 2) = tempDate
-                    dictItems(j, 3) = tempName
+                    dictItems(sortJ, 1) = sortTempKey
+                    dictItems(sortJ, 2) = sortTempDate
+                    dictItems(sortJ, 3) = sortTempName
                 ' If dates are equal, sort by name
-                ElseIf dictItems(i, 2) = dictItems(j, 2) Then
-                    If dictItems(i, 3) > dictItems(j, 3) Then
+                ElseIf dictItems(sortI, 2) = dictItems(sortJ, 2) Then
+                    If dictItems(sortI, 3) > dictItems(sortJ, 3) Then
                         ' Swap just the name and key (date is the same)
-                        tempKey = dictItems(i, 1)
-                        tempName = dictItems(i, 3)
+                        sortTempKey = dictItems(sortI, 1)
+                        sortTempName = dictItems(sortI, 3)
                         
-                        dictItems(i, 1) = dictItems(j, 1)
-                        dictItems(i, 3) = dictItems(j, 3)
+                        dictItems(sortI, 1) = dictItems(sortJ, 1)
+                        dictItems(sortI, 3) = dictItems(sortJ, 3)
                         
-                        dictItems(j, 1) = tempKey
-                        dictItems(j, 3) = tempName
+                        dictItems(sortJ, 1) = sortTempKey
+                        dictItems(sortJ, 3) = sortTempName
                     End If
                 End If
-            Next j
-        Next i
+            Next sortJ
+        Next sortI
         
         ' Extract the sorted keys
         ReDim sortedKeys(1 To UBound(dictItems, 1))
