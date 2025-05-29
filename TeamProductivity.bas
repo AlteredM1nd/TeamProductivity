@@ -306,20 +306,20 @@ Sub CalculateProductivityMetrics()
         Next key
         
         ' Simple bubble sort by month then by name
-        Dim j As Long, temp As String
-        For i = 1 To UBound(sortedKeys) - 1
-            For j = i + 1 To UBound(sortedKeys)
-                If sortedKeys(i) > sortedKeys(j) Then
+        Dim j As Long, m As Long, temp As String
+        For m = 1 To UBound(sortedKeys) - 1
+            For j = m + 1 To UBound(sortedKeys)
+                If sortedKeys(m) > sortedKeys(j) Then
                     temp = sortedKeys(j)
-                    sortedKeys(j) = sortedKeys(i)
-                    sortedKeys(i) = temp
+                    sortedKeys(j) = sortedKeys(m)
+                    sortedKeys(m) = temp
                 End If
             Next j
-        Next i
+        Next m
         
         ' Output the sorted data
-        For i = 1 To UBound(sortedKeys)
-            key = sortedKeys(i)
+        For m = 1 To UBound(sortedKeys)
+            key = sortedKeys(m)
             personMonthArray = Split(key, "|")
             personNamePart = personMonthArray(0)
             monthPart = personMonthArray(1)
