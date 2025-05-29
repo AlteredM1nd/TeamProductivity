@@ -298,11 +298,11 @@ Sub CalculateProductivityMetrics()
         Dim sortedKeys() As Variant
         ReDim sortedKeys(1 To monthlyPersonDict.Count)
         
-        Dim i As Long
-        i = 1
+        Dim k As Long
+        k = 1
         For Each key In monthlyPersonDict.Keys
-            sortedKeys(i) = key
-            i = i + 1
+            sortedKeys(k) = key
+            k = k + 1
         Next key
         
         ' Simple bubble sort by month then by name
