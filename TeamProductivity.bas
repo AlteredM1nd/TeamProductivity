@@ -2,8 +2,8 @@ Option Explicit
 
 Sub CalculateProductivityMetrics()
     ' Declare all variables at the top
-    Dim wsOutput As Worksheet, wsOutputNE As Worksheet, wsDashboard As Worksheet
-    Dim dict As Object, monthDict As Object, teamMembers As Object
+    Dim wsOutput As Worksheet, wsOutputNE As Worksheet, wsDashboard As Worksheet, wsMonthlyBreakdown As Worksheet
+    Dim dict As Object, monthDict As Object, teamMembers As Object, monthlyPersonDict As Object
     Dim arrOutput As Variant, arrOutputNE As Variant
     Dim lastRowOutput As Long, lastRowOutputNE As Long
     Dim i As Long, j As Long
@@ -105,6 +105,7 @@ Sub CalculateProductivityMetrics()
     ' Create dictionaries for data processing
     Set dict = CreateObject("Scripting.Dictionary")
     Set monthDict = CreateObject("Scripting.Dictionary")
+    Set monthlyPersonDict = CreateObject("Scripting.Dictionary")
     
     ' Process Output sheet from array (productive hours from entries)
     If Not IsEmpty(arrOutput) Then
@@ -122,6 +123,15 @@ Sub CalculateProductivityMetrics()
                     dict(key) = dict(key) + dailyHours
                 Else
                     dict.Add key, dailyHours
+                End If
+                
+                ' Add to monthly person dictionary
+                monthKey = Format(workDate, "yyyy-mm")
+                personMonthKey = personName & "|" & monthKey
+                If monthlyPersonDict.Exists(personMonthKey) Then
+                    monthlyPersonDict(personMonthKey) = monthlyPersonDict(personMonthKey) + dailyHours
+                Else
+                    monthlyPersonDict.Add personMonthKey, dailyHours
                 End If
             End If
         Next i
@@ -143,6 +153,15 @@ Sub CalculateProductivityMetrics()
                     dict(key) = dict(key) + dailyHours
                 Else
                     dict.Add key, dailyHours
+                End If
+                
+                ' Add to monthly person dictionary
+                monthKey = Format(workDate, "yyyy-mm")
+                personMonthKey = personName & "|" & monthKey
+                If monthlyPersonDict.Exists(personMonthKey) Then
+                    monthlyPersonDict(personMonthKey) = monthlyPersonDict(personMonthKey) + dailyHours
+                Else
+                    monthlyPersonDict.Add personMonthKey, dailyHours
                 End If
             End If
         Next i
@@ -244,6 +263,94 @@ Sub CalculateProductivityMetrics()
         monthRow = monthRow + 1
     Next key
     
+    ' Create Monthly Breakdown sheet
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Sheets("MonthlyBreakdown").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    
+    Set wsMonthlyBreakdown = ThisWorkbook.Sheets.Add(After:=wsDashboard)
+    wsMonthlyBreakdown.Name = "MonthlyBreakdown"
+    
+    ' Set up Monthly Breakdown headers
+    With wsMonthlyBreakdown
+        .Range("A1").Value = "Monthly Productivity Breakdown by Team Member"
+        .Range("A1").Font.Bold = True
+        .Range("A1").Font.Size = 14
+        .Range("A3").Value = "Month"
+        .Range("B3").Value = "Team Member"
+        .Range("C3").Value = "Total Hours"
+        .Range("D3").Value = "Target Hours"
+        .Range("E3").Value = "Productivity %"
+        .Range("A3:E3").Font.Bold = True
+        .Range("A3:E3").Interior.Color = RGB(200, 220, 255)
+        
+        ' Populate monthly breakdown data
+        Dim rowNum As Long
+        rowNum = 4
+        Dim personMonthArray As Variant
+        Dim personNamePart As String, monthPart As String
+        Dim targetHours As Double
+        targetHours = 140 ' Approximate monthly target (32.5 hours/week * 4.3 weeks/month)
+        
+        ' Sort the keys for better presentation
+        Dim sortedKeys() As Variant
+        ReDim sortedKeys(1 To monthlyPersonDict.Count)
+        
+        Dim i As Long
+        i = 1
+        For Each key In monthlyPersonDict.Keys
+            sortedKeys(i) = key
+            i = i + 1
+        Next key
+        
+        ' Simple bubble sort by month then by name
+        Dim j As Long, temp As String
+        For i = 1 To UBound(sortedKeys) - 1
+            For j = i + 1 To UBound(sortedKeys)
+                If sortedKeys(i) > sortedKeys(j) Then
+                    temp = sortedKeys(j)
+                    sortedKeys(j) = sortedKeys(i)
+                    sortedKeys(i) = temp
+                End If
+            Next j
+        Next i
+        
+        ' Output the sorted data
+        For i = 1 To UBound(sortedKeys)
+            key = sortedKeys(i)
+            personMonthArray = Split(key, "|")
+            personNamePart = personMonthArray(0)
+            monthPart = personMonthArray(1)
+            
+            .Cells(rowNum, 1).Value = Format(CDate(monthPart & "-01"), "yyyy-mmm")
+            .Cells(rowNum, 2).Value = personNamePart
+            .Cells(rowNum, 3).Value = Round(monthlyPersonDict(key), 2)
+            .Cells(rowNum, 4).Value = targetHours
+            .Cells(rowNum, 5).Value = monthlyPersonDict(key) / targetHours
+            
+            ' Format productivity percentage
+            .Cells(rowNum, 5).NumberFormat = "0.00%"
+            
+            ' Conditional formatting for productivity
+            If .Cells(rowNum, 5).Value >= 1 Then
+                .Cells(rowNum, 5).Interior.Color = RGB(200, 255, 200) ' Light green for 100%+
+            ElseIf .Cells(rowNum, 5).Value >= 0.9 Then
+                .Cells(rowNum, 5).Interior.Color = RGB(255, 255, 200) ' Light yellow for 90-99%
+            Else
+                .Cells(rowNum, 5).Interior.Color = RGB(255, 200, 200) ' Light red for <90%
+            End If
+            
+            rowNum = rowNum + 1
+        Next i
+        
+        ' Format the table
+        .Range("A3:E" & rowNum - 1).Borders.LineStyle = xlContinuous
+        .Range("A3:E" & rowNum - 1).Columns.AutoFit
+        .Range("A1").Select
+    End With
+    
     ' Format the dashboard
     With wsDashboard
         ' Add borders to data
@@ -268,7 +375,12 @@ Sub CalculateProductivityMetrics()
     Dim execTime As String
     execTime = Format((endTime - startTime), "0.00") & " seconds"
     
+    ' Activate the dashboard tab
+    wsDashboard.Activate
+    
     MsgBox "Productivity metrics have been calculated successfully!" & vbNewLine & _
+           "- Weekly and monthly summaries are in the ProductivityDashboard tab" & vbNewLine & _
+           "- Detailed monthly breakdown by team member is in the MonthlyBreakdown tab" & vbNewLine & _
            "Execution time: " & execTime, vbInformation, "Process Complete"
            
 CleanUp:
