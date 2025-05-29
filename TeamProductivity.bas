@@ -264,15 +264,20 @@ Sub CalculateProductivityMetrics()
         monthRow = monthRow + 1
     Next key
     
-    ' Create Monthly Breakdown sheet
+    ' Create or clear Monthly Breakdown sheet
     On Error Resume Next
     Application.DisplayAlerts = False
-    ThisWorkbook.Sheets("MonthlyBreakdown").Delete
+    Set wsMonthlyBreakdown = ThisWorkbook.Sheets("MonthlyBreakdown")
+    If wsMonthlyBreakdown Is Nothing Then
+        Set wsMonthlyBreakdown = ThisWorkbook.Sheets.Add(After:=wsDashboard)
+        wsMonthlyBreakdown.Name = "MonthlyBreakdown"
+    Else
+        ' Clear existing data but keep formatting
+        wsMonthlyBreakdown.Cells.ClearContents
+        wsMonthlyBreakdown.Cells.ClearFormats
+    End If
     Application.DisplayAlerts = True
     On Error GoTo 0
-    
-    Set wsMonthlyBreakdown = ThisWorkbook.Sheets.Add(After:=wsDashboard)
-    wsMonthlyBreakdown.Name = "MonthlyBreakdown"
     
     ' Set up Monthly Breakdown headers
     With wsMonthlyBreakdown
@@ -295,32 +300,67 @@ Sub CalculateProductivityMetrics()
         Dim targetHours As Double
         targetHours = 140 ' Approximate monthly target (32.5 hours/week * 4.3 weeks/month)
         
-        ' Sort the keys for better presentation
-        Dim sortedKeys() As Variant
-        ReDim sortedKeys(1 To monthlyPersonDict.Count)
+        ' Prepare data for sorting
+        Dim dictItems() As Variant
+        ReDim dictItems(1 To monthlyPersonDict.Count, 1 To 3) ' 1=key, 2=date, 3=name
         
-        Dim k As Long
-        k = 1
+        ' Extract data for sorting
+        Dim itemIndex As Long
+        itemIndex = 1
         For Each key In monthlyPersonDict.Keys
-            sortedKeys(k) = key
-            k = k + 1
+            personMonthArray = Split(key, "|")
+            dictItems(itemIndex, 1) = key
+            dictItems(itemIndex, 2) = CDate(personMonthArray(1) & "-01") ' Convert to date for proper sorting
+            dictItems(itemIndex, 3) = personMonthArray(0) ' Name for secondary sort
+            itemIndex = itemIndex + 1
         Next key
         
-        ' Simple bubble sort by month then by name
-        Dim sortJ As Long, m As Long, temp As String
-        For m = 1 To UBound(sortedKeys) - 1
-            For sortJ = m + 1 To UBound(sortedKeys)
-                If sortedKeys(m) > sortedKeys(sortJ) Then
-                    temp = sortedKeys(sortJ)
-                    sortedKeys(sortJ) = sortedKeys(m)
-                    sortedKeys(m) = temp
+        ' Sort by date (ascending) and then by name (alphabetical)
+        Dim i As Long, j As Long
+        Dim tempKey As String, tempDate As Date, tempName As String
+        For i = 1 To UBound(dictItems, 1) - 1
+            For j = i + 1 To UBound(dictItems, 1)
+                ' First sort by date
+                If dictItems(i, 2) > dictItems(j, 2) Then
+                    ' Swap all columns
+                    tempKey = dictItems(i, 1)
+                    tempDate = dictItems(i, 2)
+                    tempName = dictItems(i, 3)
+                    
+                    dictItems(i, 1) = dictItems(j, 1)
+                    dictItems(i, 2) = dictItems(j, 2)
+                    dictItems(i, 3) = dictItems(j, 3)
+                    
+                    dictItems(j, 1) = tempKey
+                    dictItems(j, 2) = tempDate
+                    dictItems(j, 3) = tempName
+                ' If dates are equal, sort by name
+                ElseIf dictItems(i, 2) = dictItems(j, 2) Then
+                    If dictItems(i, 3) > dictItems(j, 3) Then
+                        ' Swap just the name and key (date is the same)
+                        tempKey = dictItems(i, 1)
+                        tempName = dictItems(i, 3)
+                        
+                        dictItems(i, 1) = dictItems(j, 1)
+                        dictItems(i, 3) = dictItems(j, 3)
+                        
+                        dictItems(j, 1) = tempKey
+                        dictItems(j, 3) = tempName
+                    End If
                 End If
-            Next sortJ
-        Next m
+            Next j
+        Next i
+        
+        ' Extract the sorted keys
+        ReDim sortedKeys(1 To UBound(dictItems, 1))
+        For i = 1 To UBound(dictItems, 1)
+            sortedKeys(i) = dictItems(i, 1)
+        Next i
         
         ' Output the sorted data
-        For m = 1 To UBound(sortedKeys)
-            key = sortedKeys(m)
+        Dim item As Variant
+        For item = 1 To UBound(sortedKeys)
+            key = sortedKeys(item)
             personMonthArray = Split(key, "|")
             personNamePart = personMonthArray(0)
             monthPart = personMonthArray(1)
