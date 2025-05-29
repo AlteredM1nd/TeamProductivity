@@ -385,7 +385,7 @@ Sub CalculateProductivityMetrics()
             End If
             
             rowNum = rowNum + 1
-        Next m
+        Next item
         
         ' Format the table
         .Range("A3:E" & rowNum - 1).Borders.LineStyle = xlContinuous
