@@ -8,7 +8,7 @@ Sub CalculateProductivityMetrics()
     Dim lastRowOutput As Long, lastRowOutputNE As Long
     Dim i As Long, j As Long
     Dim weekRow As Long, monthRow As Long
-    Dim key As Variant, personName As String, workDate As Date
+    Dim key As Variant, personName As String, workDate As Date, personMonthKey As String
     Dim dailyHours As Double, weeklyHours As Double
     Dim achievedTarget As Long, totalPossible As Long
     Dim startDate As Date, endDate As Date
