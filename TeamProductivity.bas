@@ -349,7 +349,7 @@ Sub CalculateProductivityMetrics()
         ' Format the table
         .Range("A3:E" & rowNum - 1).Borders.LineStyle = xlContinuous
         .Range("A3:E" & rowNum - 1).Columns.AutoFit
-        .Range("A1").Select
+        Application.Goto .Range("A1"), True
     End With
     
     ' Format the dashboard
@@ -363,11 +363,11 @@ Sub CalculateProductivityMetrics()
         
         ' Auto-fit columns and select top
         .Range("A3:L3").EntireColumn.AutoFit
-        .Range("A1").Select
+        Application.Goto .Range("A1"), True
         
         ' Freeze panes for better navigation
         .Activate
-        .Range("A4").Select
+        .Range("A4").Activate
         ActiveWindow.FreezePanes = True
     End With
     
