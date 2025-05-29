@@ -109,11 +109,12 @@ Sub CalculateProductivityMetrics()
     
     ' Process Output sheet from array (productive hours from entries)
     If Not IsEmpty(arrOutput) Then
-        For i = LBound(arrOutput, 1) To UBound(arrOutput, 1)
-            If Not IsEmpty(arrOutput(i, 1)) And Not IsEmpty(arrOutput(i, 2)) Then
-                personName = arrOutput(i, 2)  ' Column B has names
-                workDate = arrOutput(i, 1)    ' Column A has dates
-                dailyHours = IIf(IsNumeric(arrOutput(i, 7)), arrOutput(i, 7), 0) ' Column G has hours
+        Dim rowIdx As Long
+        For rowIdx = LBound(arrOutput, 1) To UBound(arrOutput, 1)
+            If Not IsEmpty(arrOutput(rowIdx, 1)) And Not IsEmpty(arrOutput(rowIdx, 2)) Then
+                personName = arrOutput(rowIdx, 2)  ' Column B has names
+                workDate = arrOutput(rowIdx, 1)    ' Column A has dates
+                dailyHours = IIf(IsNumeric(arrOutput(rowIdx, 7)), arrOutput(rowIdx, 7), 0) ' Column G has hours
                 
                 ' Create unique key for person and date
                 key = personName & "|" & Format(workDate, "yyyy-mm-dd")
@@ -134,16 +135,16 @@ Sub CalculateProductivityMetrics()
                     monthlyPersonDict.Add personMonthKey, dailyHours
                 End If
             End If
-        Next i
+        Next rowIdx
     End If
     
     ' Process OutputNE sheet from array (non-entry hours)
     If Not IsEmpty(arrOutputNE) Then
-        For i = LBound(arrOutputNE, 1) To UBound(arrOutputNE, 1)
-            If Not IsEmpty(arrOutputNE(i, 1)) And Not IsEmpty(arrOutputNE(i, 2)) Then
-                personName = arrOutputNE(i, 2)  ' Column B has names
-                workDate = arrOutputNE(i, 1)    ' Column A has dates
-                dailyHours = IIf(IsNumeric(arrOutputNE(i, 4)), arrOutputNE(i, 4), 0) ' Column D has hours
+        For rowIdx = LBound(arrOutputNE, 1) To UBound(arrOutputNE, 1)
+            If Not IsEmpty(arrOutputNE(rowIdx, 1)) And Not IsEmpty(arrOutputNE(rowIdx, 2)) Then
+                personName = arrOutputNE(rowIdx, 2)  ' Column B has names
+                workDate = arrOutputNE(rowIdx, 1)    ' Column A has dates
+                dailyHours = IIf(IsNumeric(arrOutputNE(rowIdx, 4)), arrOutputNE(rowIdx, 4), 0) ' Column D has hours
                 
                 ' Create unique key for person and date
                 key = personName & "|" & Format(workDate, "yyyy-mm-dd")
@@ -164,7 +165,7 @@ Sub CalculateProductivityMetrics()
                     monthlyPersonDict.Add personMonthKey, dailyHours
                 End If
             End If
-        Next i
+        Next rowIdx
     End If
     
     ' Find date range
