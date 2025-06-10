@@ -111,7 +111,7 @@ The system requires several Excel sheets for configuration:
 The system supports multiple regions with automatic categorization:
 - **BC** (British Columbia)
 - **AB** (Alberta)
-- **CT** (Connecticut)
+- **CT** (Central)
 - **ON** (Ontario)
 - **QC** (Quebec)
 - **MT** (Montana)
