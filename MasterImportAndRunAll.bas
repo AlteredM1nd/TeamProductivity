@@ -66,8 +66,7 @@ CleanUp:
 End Sub
 
 '==========================================================================
-' --- HELPER FUNCTION TO IMPORT DATA FOR A *SPECIFIC* DATE ---
-' Renamed from ImportDataForLastWorkday to reflect its new purpose.
+' --- HELPER FUNCTION TO IMPORT DATA (Works with Hidden Sheets) ---
 '==========================================================================
 Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Dim sourceURL As String, sourceWB As Workbook, targetWB As Workbook
@@ -107,9 +106,8 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Next ws
 
     If sourcePersonal Is Nothing Or sourceNonEntry Is Nothing Then
-        ' This is now a non-critical error; we just note it and continue the loop.
         Debug.Print "Could not find source sheets for date " & Format(processDate, "M/D/YYYY") & " in the source workbook."
-        GoTo CleanUpAndExit_Success ' Exit successfully, allowing the master loop to try the next day.
+        GoTo CleanUpAndExit_Success
     End If
     
     ' --- 3. Prepare Target Sheets: Find or Create Them ---
@@ -121,8 +119,10 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Set targetPersonal = targetWB.Sheets(personalSheetName)
     On Error GoTo 0
     If targetPersonal Is Nothing Then
+        ' *** ROBUST CHANGE: Directly create and assign the new sheet ***
         templatePersonal.Copy After:=targetWB.Sheets(targetWB.Sheets.Count)
-        Set targetPersonal = ActiveSheet: targetPersonal.name = personalSheetName
+        Set targetPersonal = targetWB.Sheets(targetWB.Sheets.Count) ' Get a direct reference
+        targetPersonal.name = personalSheetName
     Else
         targetPersonal.Range("C3", targetPersonal.UsedRange.SpecialCells(xlCellTypeLastCell)).ClearContents
     End If
@@ -132,8 +132,10 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Set targetNonEntry = targetWB.Sheets(nonEntrySheetName)
     On Error GoTo 0
     If targetNonEntry Is Nothing Then
+        ' *** ROBUST CHANGE: Directly create and assign the new sheet ***
         templateNonEntry.Copy After:=targetWB.Sheets(targetWB.Sheets.Count)
-        Set targetNonEntry = ActiveSheet: targetNonEntry.name = nonEntrySheetName
+        Set targetNonEntry = targetWB.Sheets(targetWB.Sheets.Count) ' Get a direct reference
+        targetNonEntry.name = nonEntrySheetName
     Else
         targetNonEntry.Range("D2", targetNonEntry.UsedRange.SpecialCells(xlCellTypeLastCell)).ClearContents
     End If
