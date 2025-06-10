@@ -286,16 +286,6 @@ The system expects specific sheet naming patterns:
 - **Output Sheets**: "Output" (Personal Entry data), "OutputNE" (Non-Entry data)
 - **Report Sheets**: "ProductivityDashboard", "MonthlyBreakdown", "WeeklyBreakdown", "DailyBreakdown"
 
-## 🔒 Version History
-
-- **v4.3**: Added destination file selection for away time processing
-- **v4.2**: Enhanced sick/away time processing with field clearing
-- **Current**: Intelligent catch-up functionality and comprehensive reporting
-
-## 📞 Support
-
-For technical support or feature requests, refer to the code comments and the automatically generated "Info" sheet that explains all metrics and calculations in detail.
-
 ## 🤝 Contributing
 
 When modifying the code:
