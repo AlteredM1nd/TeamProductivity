@@ -209,16 +209,25 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     ' --- CONFIGURATION ---
     Dim wsConfig As Worksheet, DAILY_TARGET_HOURS As Double, HOURS_PER_SICK_AWAY_DAY As Double
     Dim sickAwayCategories As Object, categoryRange As Range, cell As Range
+    Dim nonProdTasks As Object, nonProdRange As Range
     
     '--- STEP 1: LOAD CONFIGURATION ---
     Set wsConfig = ThisWorkbook.Sheets("Config")
     DAILY_TARGET_HOURS = wsConfig.Range("Config_DailyTargetHours").Value
     HOURS_PER_SICK_AWAY_DAY = wsConfig.Range("Config_HoursPerSickDay").Value
+    
     Set categoryRange = wsConfig.Range("Config_SickAwayCategories")
     Set sickAwayCategories = CreateObject("Scripting.Dictionary")
     sickAwayCategories.CompareMode = vbTextCompare
     For Each cell In categoryRange.Cells
         If Not IsEmpty(cell.Value) Then sickAwayCategories(CStr(cell.Value)) = 1
+    Next cell
+    
+    Set nonProdRange = wsConfig.Range("Config_NonProductiveTasks")
+    Set nonProdTasks = CreateObject("Scripting.Dictionary")
+    nonProdTasks.CompareMode = vbTextCompare
+    For Each cell In nonProdRange.Cells
+        If Not IsEmpty(cell.Value) Then nonProdTasks(CStr(cell.Value)) = 1
     Next cell
 
     '--- STEP 2: RUN DATA PROCESSING SUBS ON LOCAL SHEETS (Current Day Only) ---
@@ -233,10 +242,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
         Case Else: lastWorkdayDate = Date - 1
     End Select
     
-    ' *** NEW: DELETE OLD ENTRIES FOR THE DAY BEING PROCESSED ***
-    ' This prevents duplicates if the script is re-run for the same day.
-    ' Turn off filter, filter for the date, delete visible rows, turn off filter.
-    Application.ScreenUpdating = False ' Ensure it stays off
+    Application.ScreenUpdating = False
     With wsOutput
         If .AutoFilterMode Then .AutoFilterMode = False
         .Range("A1").AutoFilter Field:=1, Criteria1:=lastWorkdayDate
@@ -255,11 +261,9 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     End With
     Application.ScreenUpdating = True
     
-    ' *** Process only the sheet for the most recent workday ***
     Dim localSheet As Worksheet, parsedDate As String
-    Dim personalSheetName As String, nonEntrySheetName As String
-    personalSheetName = "Personal Entry " & Format(lastWorkdayDate, "m-d-yy")
-    nonEntrySheetName = "Non-Entry Hrs " & Format(lastWorkdayDate, "m-d-yy")
+    Dim personalSheetName As String: personalSheetName = "Personal Entry " & Format(lastWorkdayDate, "m-d-yy")
+    Dim nonEntrySheetName As String: nonEntrySheetName = "Non-Entry Hrs " & Format(lastWorkdayDate, "m-d-yy")
     
     On Error Resume Next
     Set localSheet = ThisWorkbook.Sheets(personalSheetName)
@@ -267,7 +271,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
         parsedDate = ParseDateFromName(localSheet.name, "Personal Entry ")
         If parsedDate <> "" Then Call ProcessActivitySheet(localSheet, parsedDate)
     End If
-    Set localSheet = Nothing ' Reset for next check
+    Set localSheet = Nothing
     
     Set localSheet = ThisWorkbook.Sheets(nonEntrySheetName)
     If Not localSheet Is Nothing Then
@@ -276,8 +280,8 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     End If
     On Error GoTo 0
     
-    '--- STEP 3: READ & AGGREGATE ALL DATA FOR THE CURRENT YEAR ---
-    Application.StatusBar = "Step 4: Aggregating processed data..."
+    '--- STEP 3: READ & AGGREGATE ALL DATA ---
+    Application.StatusBar = "Step 4: Aggregating all processed data..."
     lastRowOutput = wsOutput.Cells(wsOutput.Rows.Count, "A").End(xlUp).row
     lastRowOutputNE = wsOutputNE.Cells(wsOutputNE.Rows.Count, "A").End(xlUp).row
     If lastRowOutput <= 1 And lastRowOutputNE <= 1 Then GoTo NoDataToProcess
@@ -293,8 +297,6 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     Set personMonthlyAdjWorkdaySum = CreateObject("Scripting.Dictionary")
     Set personWeeklyAdjWorkdaySum = CreateObject("Scripting.Dictionary")
     overallStartDate = DateSerial(Year(Date) + 10, 1, 1): overallEndDate = DateSerial(1900, 1, 1)
-    
-    Dim currentYear As Integer: currentYear = Year(Date)
 
     If Not IsEmpty(arrOutput) Then
         For rowIdx = 1 To UBound(arrOutput, 1)
@@ -320,18 +322,22 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
             If Not IsEmpty(arrOutputNE(rowIdx, 1)) And Not IsEmpty(arrOutputNE(rowIdx, 2)) And IsDate(arrOutputNE(rowIdx, 1)) Then
                 personName = CStr(arrOutputNE(rowIdx, 2)): workDate = CDate(arrOutputNE(rowIdx, 1))
                 entryType = CStr(arrOutputNE(rowIdx, 3))
-                dailyHours = IIf(IsNumeric(arrOutputNE(rowIdx, 4)), CDbl(arrOutputNE(rowIdx, 4)), 0)
-                personDayKey = personName & "|" & Format(workDate, "yyyy-mm-dd")
-                If sickAwayCategories.Exists(entryType) Then
-                    personDaySickAwayHoursDict(personDayKey) = personDaySickAwayHoursDict(personDayKey) + dailyHours
-                ElseIf dailyHours <> 0 Then
-                    dailyHoursDict(personDayKey) = dailyHoursDict(personDayKey) + dailyHours
-                End If
-                If dailyHours <> 0 Or sickAwayCategories.Exists(entryType) Then
-                    If Not allTeamMembersMasterDict.Exists(personName) Then allTeamMembersMasterDict.Add personName, 1
-                    If workDate < overallStartDate Then overallStartDate = workDate
-                    If workDate > overallEndDate Then overallEndDate = workDate
-                End If
+                
+                ' The key change: Check if the task should be excluded
+                If Not nonProdTasks.Exists(entryType) Then
+                    dailyHours = IIf(IsNumeric(arrOutputNE(rowIdx, 4)), CDbl(arrOutputNE(rowIdx, 4)), 0)
+                    personDayKey = personName & "|" & Format(workDate, "yyyy-mm-dd")
+                    If sickAwayCategories.Exists(entryType) Then
+                        personDaySickAwayHoursDict(personDayKey) = personDaySickAwayHoursDict(personDayKey) + dailyHours
+                    ElseIf dailyHours <> 0 Then
+                        dailyHoursDict(personDayKey) = dailyHoursDict(personDayKey) + dailyHours
+                    End If
+                    If dailyHours <> 0 Or sickAwayCategories.Exists(entryType) Then
+                        If Not allTeamMembersMasterDict.Exists(personName) Then allTeamMembersMasterDict.Add personName, 1
+                        If workDate < overallStartDate Then overallStartDate = workDate
+                        If workDate > overallEndDate Then overallEndDate = workDate
+                    End If
+                End If ' End of the non-productive task check
             End If
         Next rowIdx
     End If
