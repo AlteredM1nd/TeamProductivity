@@ -114,7 +114,7 @@ The system supports multiple regions with automatic categorization:
 - **CT** (Central)
 - **ON** (Ontario)
 - **QC** (Quebec)
-- **MT** (Montana)
+- **MT** (Maritimes)
 - **YK** (Yukon)
 - **AR** (All Regions - default for unrecognized regions)
 
