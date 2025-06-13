@@ -4,8 +4,7 @@
 Option Explicit
 
 '==========================================================================
-' --- MASTER SUBROUTINE (with "Intelligent Catch-Up") ---
-' This is the sub you should assign to your main button.
+' --- MASTER SUBROUTINE (Checks for Pre-Existing EMPTY Sheets) ---
 '==========================================================================
 Sub Master_ImportAndRunAll()
     Dim startTime As Double: startTime = Timer
@@ -19,35 +18,51 @@ Sub Master_ImportAndRunAll()
     ' --- 1. DETERMINE DATE RANGE TO PROCESS ---
     Set wsOutput = ThisWorkbook.Sheets("Output")
     
-    ' Find the last date we have data for in the Output sheet.
     If wsOutput.Cells(wsOutput.Rows.Count, "A").End(xlUp).row > 1 Then
         lastProcessedDate = wsOutput.Cells(wsOutput.Rows.Count, "A").End(xlUp).Value
     Else
-        ' If Output sheet is empty, start from the first day of last month.
-        lastProcessedDate = DateSerial(Year(Date), Month(Date) - 1, 1)
+        lastProcessedDate = DateSerial(2024, 1, 1) - 1 ' Start before Jan 1, 2024 if empty
     End If
     
-    ' Determine the final target date (yesterday's workday).
     Select Case Weekday(Date, vbMonday)
-        Case 1: lastWorkdayDate = Date - 3 ' Monday -> Friday
-        Case 7: lastWorkdayDate = Date - 2 ' Sunday -> Friday
-        Case Else: lastWorkdayDate = Date - 1 ' Tue-Sat -> Yesterday
+        Case 1: lastWorkdayDate = Date - 3
+        Case 7: lastWorkdayDate = Date - 2
+        Case Else: lastWorkdayDate = Date - 1
     End Select
     
-    ' --- 2. LOOP THROUGH AND PROCESS ALL MISSED DAYS ---
+    ' --- 2. LOOP THROUGH AND IMPORT ONLY IF DATA IS MISSING ---
     If lastProcessedDate >= lastWorkdayDate Then
         Application.StatusBar = "Data is already up to date. Proceeding to calculations."
     Else
         loopDate = lastProcessedDate + 1
         Do While loopDate <= lastWorkdayDate
-            ' Skip weekends
-            If Weekday(loopDate, vbMonday) < 6 Then
-                Application.StatusBar = "Processing missed day: " & Format(loopDate, "yyyy-mm-dd")
-                ' Call the import helper for each specific day.
-                If Not ImportDataForDate(loopDate) Then
-                    ' If a day fails (e.g., source sheet missing), stop the whole process.
-                    MsgBox "Process stopped because data for " & Format(loopDate, "M/D/YYYY") & " could not be imported.", vbExclamation
-                    GoTo CleanUp
+            If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
+                Dim sheetName As String, needsImport As Boolean
+                Dim targetSheet As Worksheet
+                
+                sheetName = "Personal Entry " & Format(loopDate, "m-d-yy")
+                needsImport = True ' Assume we need to import by default
+                
+                On Error Resume Next
+                Set targetSheet = ThisWorkbook.Sheets(sheetName)
+                On Error GoTo 0
+                
+                If Not targetSheet Is Nothing Then
+                    If Not IsEmpty(targetSheet.Range("C3").Value) Then
+                        needsImport = False
+                    End If
+                End If
+                Set targetSheet = Nothing
+                
+                If needsImport Then
+                    Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
+                    If Not ImportDataForDate(loopDate) Then
+                        MsgBox "Process stopped because data for " & Format(loopDate, "M/D/YYYY") & " could not be imported.", vbExclamation
+                        GoTo CleanUp
+                    End If
+                Else
+                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
+                    Application.Wait (Now + TimeValue("0:00:01"))
                 End If
             End If
             loopDate = loopDate + 1
@@ -55,7 +70,6 @@ Sub Master_ImportAndRunAll()
     End If
 
     ' --- 3. RUN THE FINAL CALCULATIONS ---
-    Application.StatusBar = "All data is up to date. Calculating productivity metrics..."
     Call CalculateProductivityMetrics(startTime)
     
 CleanUp:
@@ -202,7 +216,7 @@ End Function
 
 
 '==========================================================================
-' --- MAIN CALCULATION SUBROUTINE (Corrected to Process 2024 Onwards) ---
+' --- MAIN CALCULATION SUBROUTINE (Rebuilds from 2024 Onwards) ---
 '==========================================================================
 Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     ' --- ALL VARIABLES ---
@@ -244,7 +258,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     Next cell
 
     '--- STEP 2: REBUILD THE OUTPUT SHEETS FROM ALL RELEVANT DATED SHEETS ---
-    Application.StatusBar = "Step 3: Rebuilding Output sheets from all dated sources..."
+    Application.StatusBar = "Step 3: Rebuilding Output sheets from all dated sources for the year..."
     Set wsOutput = ThisWorkbook.Sheets("Output")
     Set wsOutputNE = ThisWorkbook.Sheets("OutputNE")
     
@@ -252,27 +266,24 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     wsOutputNE.Cells.Clear
     
     Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
-    ' *** CORRECTED LOGIC: Define the hard start date for historical data ***
     Dim reportStartDate As Date: reportStartDate = DateSerial(2024, 1, 1)
     
     For Each localSheet In ThisWorkbook.Worksheets
         If localSheet.name Like "Personal Entry *" Then
-            If localSheet.name <> "Personal Entry" Then ' Exclude the template
+            If localSheet.name <> "Personal Entry" Then
                 parsedDate = ParseDateFromName(localSheet.name, "Personal Entry ")
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
-                    ' Process if the sheet is on or after January 1, 2024
                     If sheetDate >= reportStartDate Then
                         Call ProcessActivitySheet(localSheet, parsedDate)
                     End If
                 End If
             End If
         ElseIf localSheet.name Like "Non-Entry Hrs *" Then
-            If localSheet.name <> "Non-Entry Hrs" Then ' Exclude the template
+            If localSheet.name <> "Non-Entry Hrs" Then
                 parsedDate = ParseDateFromName(localSheet.name, "Non-Entry Hrs ")
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
-                    ' Process if the sheet is on or after January 1, 2024
                     If sheetDate >= reportStartDate Then
                         Call ProcessNonEntrySheet(localSheet, parsedDate)
                     End If
@@ -290,7 +301,6 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     If lastRowOutput > 1 Then arrOutput = wsOutput.Range("A2:G" & lastRowOutput).Value
     If lastRowOutputNE > 1 Then arrOutputNE = wsOutputNE.Range("A2:D" & lastRowOutputNE).Value
     
-    ' From here, the aggregation logic is correct. It will process whatever is in arrOutput and arrOutputNE.
     Set dailyHoursDict = CreateObject("Scripting.Dictionary")
     Set personDaySickAwayHoursDict = CreateObject("Scripting.Dictionary")
     Set personMonthlyData = CreateObject("Scripting.Dictionary")
@@ -298,13 +308,17 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     Set allTeamMembersMasterDict = CreateObject("Scripting.Dictionary"): allTeamMembersMasterDict.CompareMode = vbTextCompare
     Set personMonthlyAdjWorkdaySum = CreateObject("Scripting.Dictionary")
     Set personWeeklyAdjWorkdaySum = CreateObject("Scripting.Dictionary")
-    overallStartDate = DateSerial(Year(Date) + 20, 1, 1): overallEndDate = DateSerial(1900, 1, 1)
+    overallStartDate = DateSerial(Year(Date) + 10, 1, 1): overallEndDate = DateSerial(1900, 1, 1)
 
     If Not IsEmpty(arrOutput) Then
         For rowIdx = 1 To UBound(arrOutput, 1)
             If Not IsEmpty(arrOutput(rowIdx, 1)) And Not IsEmpty(arrOutput(rowIdx, 2)) And IsDate(arrOutput(rowIdx, 1)) Then
                 personName = CStr(arrOutput(rowIdx, 2)): workDate = CDate(arrOutput(rowIdx, 1))
-                If IsNumeric(arrOutput(rowIdx, 7)) Then dailyHours = CDbl(arrOutput(rowIdx, 7)) Else dailyHours = 0
+                If IsNumeric(arrOutput(rowIdx, 7)) Then
+                    dailyHours = CDbl(arrOutput(rowIdx, 7))
+                Else
+                    dailyHours = 0
+                End If
                 If dailyHours <> 0 Then
                     personDayKey = personName & "|" & Format(workDate, "yyyy-mm-dd")
                     dailyHoursDict(personDayKey) = dailyHoursDict(personDayKey) + dailyHours
@@ -320,6 +334,8 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
             If Not IsEmpty(arrOutputNE(rowIdx, 1)) And Not IsEmpty(arrOutputNE(rowIdx, 2)) And IsDate(arrOutputNE(rowIdx, 1)) Then
                 personName = CStr(arrOutputNE(rowIdx, 2)): workDate = CDate(arrOutputNE(rowIdx, 1))
                 entryType = CStr(arrOutputNE(rowIdx, 3))
+                
+                ' The key change: Check if the task should be excluded
                 If Not nonProdTasks.Exists(entryType) Then
                     dailyHours = IIf(IsNumeric(arrOutputNE(rowIdx, 4)), CDbl(arrOutputNE(rowIdx, 4)), 0)
                     personDayKey = personName & "|" & Format(workDate, "yyyy-mm-dd")
@@ -333,7 +349,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
                         If workDate < overallStartDate Then overallStartDate = workDate
                         If workDate > overallEndDate Then overallEndDate = workDate
                     End If
-                End If
+                End If ' End of the non-productive task check
             End If
         Next rowIdx
     End If
