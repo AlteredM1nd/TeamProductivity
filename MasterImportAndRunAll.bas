@@ -145,15 +145,29 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     
     ' -- For Personal Entry --
     Dim lastDataRowPE As Long, lastDataColPE As Long
+    
+    ' Find the last row based on names in column A of the SOURCE sheet
     lastDataRowPE = sourcePersonal.Cells(sourcePersonal.Rows.Count, "A").End(xlUp).row
-    lastDataColPE = sourcePersonal.Cells(2, sourcePersonal.Columns.Count).End(xlToLeft).Column
-    If lastDataRowPE >= 3 And lastDataColPE >= 3 Then
-        dataArray = sourcePersonal.Range(sourcePersonal.Cells(3, 3), sourcePersonal.Cells(lastDataRowPE, lastDataColPE)).Value2
+    
+    ' *** NEW: Find the last column based on the headers in your LOCAL TEMPLATE ***
+    lastDataColPE = templatePersonal.Cells(2, templatePersonal.Columns.Count).End(xlToLeft).Column
+    
+    If lastDataRowPE >= 3 And lastDataColPE >= 3 Then ' Ensure there is data to copy
+        ' Define the source data range using the dimensions we found
+        Dim sourceDataRangePE As Range
+        Set sourceDataRangePE = sourcePersonal.Range(sourcePersonal.Cells(3, 3), sourcePersonal.Cells(lastDataRowPE, lastDataColPE))
+        
+        ' Step 1: Copy to memory
+        dataArray = sourceDataRangePE.Value2
+        
+        ' Step 2: Clean in memory
         For r = 1 To UBound(dataArray, 1)
             For c = 1 To UBound(dataArray, 2)
-                If IsError(dataArray(r, c)) Then dataArray(r, c) = ""
+                If IsError(dataArray(r, c)) Then dataArray(r, c) = "" ' Replace errors with blanks
             Next c
         Next r
+        
+        ' Step 3: Paste from memory
         targetPersonal.Range("C3").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
     End If
     
