@@ -4,7 +4,7 @@
 Option Explicit
 
 '==========================================================================
-' --- MASTER SUBROUTINE (Checks if Data Range is Empty) ---
+' --- MASTER SUBROUTINE (Checks for Pre-Existing EMPTY Sheets) ---
 '==========================================================================
 Sub Master_ImportAndRunAll()
     Dim startTime As Double: startTime = Timer
@@ -37,12 +37,9 @@ Sub Master_ImportAndRunAll()
         loopDate = lastProcessedDate + 1
         Do While loopDate <= lastWorkdayDate
             If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
-            
-                ' *** NEW ROBUST LOGIC: Check if the data range in the dated sheet is empty ***
                 Dim sheetName As String, needsImport As Boolean
                 Dim targetSheet As Worksheet
                 
-                ' We only need to check one of the two sheet types. Personal Entry is the main one.
                 sheetName = "Personal Entry " & Format(loopDate, "m-d-yy")
                 needsImport = True ' Assume we need to import by default
                 
@@ -51,20 +48,11 @@ Sub Master_ImportAndRunAll()
                 On Error GoTo 0
                 
                 If Not targetSheet Is Nothing Then
-                    ' The sheet exists. Now check if the core data range has any values.
-                    ' We use CountA which is very fast for this check.
-                    ' Define a generous range to check for data.
-                    Dim dataCheckRange As Range
-                    Set dataCheckRange = targetSheet.Range("C3:EZ50") ' Checks a large, fixed area.
-                    
-                    If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
-                        ' Data exists, so we DON'T need to import.
+                    If Not IsEmpty(targetSheet.Range("C3").Value) Then
                         needsImport = False
                     End If
                 End If
-                ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
-                
-                Set targetSheet = Nothing ' Reset for next loop iteration
+                Set targetSheet = Nothing
                 
                 If needsImport Then
                     Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
@@ -74,8 +62,7 @@ Sub Master_ImportAndRunAll()
                     End If
                 Else
                     Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
-                    ' A small delay to make the status bar readable, can be removed if preferred.
-                    ' Application.Wait (Now + TimeValue("0:00:01"))
+                    Application.Wait (Now + TimeValue("0:00:01"))
                 End If
             End If
             loopDate = loopDate + 1
