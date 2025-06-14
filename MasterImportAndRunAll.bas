@@ -7,9 +7,18 @@ Option Explicit
 ' --- MASTER SUBROUTINE (Checks if Data Range is Empty) ---
 '==========================================================================
 Sub Master_ImportAndRunAll()
+    On Error GoTo ErrorHandler
+    
     Dim startTime As Double: startTime = Timer
     Dim wsOutput As Worksheet
     Dim lastProcessedDate As Date, lastWorkdayDate As Date, loopDate As Date
+    Dim config As ConfigSettings
+    
+    ' Initialize settings
+    config = LoadConfig()
+    
+    ' Create backup before processing
+    CreateBackup "Before daily processing"
     
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
@@ -34,10 +43,14 @@ Sub Master_ImportAndRunAll()
     If lastProcessedDate >= lastWorkdayDate Then
         Application.StatusBar = "Data is already up to date. Proceeding to calculations."
     Else
+        ' Initialize progress tracking
+        Dim totalDays As Long
+        totalDays = DateDiff("d", lastProcessedDate + 1, lastWorkdayDate)
+        Call InitProgress("Data Import", totalDays, "Processing date range")
+        
         loopDate = lastProcessedDate + 1
         Do While loopDate <= lastWorkdayDate
             If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
-            
                 ' *** NEW ROBUST LOGIC: Check if the data range in the dated sheet is empty ***
                 Dim sheetName As String, needsImport As Boolean
                 Dim targetSheet As Worksheet
@@ -67,25 +80,37 @@ Sub Master_ImportAndRunAll()
                 Set targetSheet = Nothing ' Reset for next loop iteration
                 
                 If needsImport Then
-                    Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
                     If Not ImportDataForDate(loopDate) Then
-                        MsgBox "Process stopped because data for " & Format(loopDate, "M/D/YYYY") & " could not be imported.", vbExclamation
-                        GoTo CleanUp
+                        LogError Err.Number, "Failed to import data for " & Format(loopDate, "M/D/YYYY"), _
+                                "MasterImportAndRunAll", "Master_ImportAndRunAll"
+                        GoTo ErrorHandler
                     End If
-                Else
-                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
-                    ' A small delay to make the status bar readable, can be removed if preferred.
-                    ' Application.Wait (Now + TimeValue("0:00:01"))
                 End If
+                Call UpdateProgress
+                Call LogProgress
             End If
             loopDate = loopDate + 1
         Loop
     End If
 
     ' --- 3. RUN THE FINAL CALCULATIONS ---
+    Call InitProgress("Calculations", 1, "Running productivity metrics")
     Call CalculateProductivityMetrics(startTime)
+    Call EndProgress
+    
+    ' Create backup after successful processing
+    CreateBackup "After daily processing"
+    GoTo CleanUp
+
+ErrorHandler:
+    Dim errMsg As String
+    errMsg = "An error occurred:" & vbNewLine & _
+            "Error " & Err.Number & ": " & Err.Description
+    MsgBox errMsg, vbCritical
+    LogError Err.Number, Err.Description, "MasterImportAndRunAll", "Master_ImportAndRunAll"
     
 CleanUp:
+    Call EndProgress
     Application.StatusBar = False
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
@@ -102,6 +127,11 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Dim sourcePersonal As Worksheet, sourceNonEntry As Worksheet
     Dim targetPersonal As Worksheet, targetNonEntry As Worksheet
     Dim templatePersonal As Worksheet, templateNonEntry As Worksheet
+    
+    ImportDataForDate = False ' Default return value
+    
+    ' Initialize progress for this date
+    Call InitProgress("Import", 4, "Processing " & Format(processDate, "yyyy-mm-dd"))
     
     On Error GoTo ErrorHandler
     
