@@ -262,7 +262,7 @@ End Function
 '==========================================================================
 ' --- MAIN CALCULATION SUBROUTINE (Rebuilds from 2024 Onwards) ---
 '==========================================================================
-Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByRef datesToProcess() As Date = Nothing, Optional ByVal dateCount As Long = 0)
+Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByRef datesToProcess As Variant = Empty, Optional ByVal dateCount As Long = 0)
     ' *** PERFORMANCE: Start metrics calculation timing ***
     Dim metricsStartTime As Double: metricsStartTime = Timer
     Application.StatusBar = "Calculating productivity metrics..."
@@ -309,7 +309,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
     Application.StatusBar = "Step 3: Rebuilding Output sheets from all dated sources for the year..."
     Set wsOutput = ThisWorkbook.Sheets("Output")
     Set wsOutputNE = ThisWorkbook.Sheets("OutputNE")
-    If Not IsMissing(datesToProcess) And Not IsEmpty(datesToProcess) And dateCount > 0 Then
+    If Not IsEmpty(datesToProcess) And dateCount > 0 Then
         ' Only process/append for the provided dates
         Dim processDatesDict As Object
         Set processDatesDict = CreateObject("Scripting.Dictionary")
@@ -331,7 +331,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
                     If sheetDate >= reportStartDate Then
-                        If (IsMissing(datesToProcess) Or IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
+                        If (IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
                             Call ProcessActivitySheet(localSheet, parsedDate)
                         End If
                     End If
@@ -343,7 +343,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
                     If sheetDate >= reportStartDate Then
-                        If (IsMissing(datesToProcess) Or IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
+                        If (IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
                             Call ProcessNonEntrySheet(localSheet, parsedDate)
                         End If
                     End If
