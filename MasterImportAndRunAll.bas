@@ -323,7 +323,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
         wsOutputNE.Cells.Clear
     End If
     Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
-    Dim reportStartDate As Date: reportStartDate = DateSerial(2024, 1, 1)
+    Dim reportStartDate: reportStartDate = DateSerial(2024, 1, 1)
     For Each localSheet In ThisWorkbook.Worksheets
         If localSheet.name Like "Personal Entry *" Then
             If localSheet.name <> "Personal Entry" Then
@@ -687,9 +687,9 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 .Range("A3:H" & 3 + dailyRowCount).Borders.LineStyle = xlContinuous
                 If .AutoFilterMode Then .AutoFilterMode = False
                 .Range("A3:H3").AutoFilter
+                .Columns("A:H").AutoFit: Application.Goto .Range("A1"), True
             End If
-        End With
-        .Columns("A:H").AutoFit: Application.Goto .Range("A1"), True
+        End If
     End With
     
     ' -- Final Formatting for Dashboard --
