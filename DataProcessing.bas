@@ -147,3 +147,103 @@ Public Function ParseDateFromName(fullName As String, prefix As String) As Strin
     If dt = 0 Then Exit Function
     ParseDateFromName = Format(dt, "yyyy-mm-dd")
 End Function
+
+'==========================================================================
+' --- PERFORMANCE OPTIMIZATION: Faster Data Processing ---
+'==========================================================================
+Public Sub ProcessActivitySheetOptimized(wsInput As Worksheet, theDate As String)
+    ' *** OPTIMIZED VERSION: Pre-calculate array sizes and use bulk operations ***
+    Dim startTime As Double: startTime = Timer
+    
+    Const FIRST_TASK_ROW As Long = 2
+    Const FIRST_DATA_ROW As Long = 3
+    Const FIRST_TASK_COL As Long = 2
+    
+    Dim wsOutput As Worksheet: Set wsOutput = ThisWorkbook.Sheets("Output")
+    Dim wsLookup As Worksheet: Set wsLookup = ThisWorkbook.Sheets("ActivityLookup")
+
+    ' *** PERFORMANCE: Use faster dictionary loading ***
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = vbTextCompare
+    
+    Dim lkArr As Variant, lastLkRow As Long
+    lastLkRow = wsLookup.Cells(wsLookup.Rows.Count, 1).End(xlUp).row
+    If lastLkRow > 1 Then
+        lkArr = wsLookup.Range("A2:C" & lastLkRow).Value
+        Dim r As Long
+        For r = 1 To UBound(lkArr, 1): dict(lkArr(r, 1)) = lkArr(r, 2): Next r
+    End If
+    
+    ' *** PERFORMANCE: Calculate exact data range instead of reading entire sheet ***
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsInput.Cells(wsInput.Rows.Count, 1).End(xlUp).row
+    lastCol = wsInput.Cells(FIRST_TASK_ROW, wsInput.Columns.Count).End(xlToLeft).Column
+    
+    If lastRow < FIRST_DATA_ROW Or lastCol < FIRST_TASK_COL Then Exit Sub
+    
+    ' *** PERFORMANCE: Read only the data we need ***
+    Dim inArr As Variant
+    inArr = wsInput.Range(wsInput.Cells(1, 1), wsInput.Cells(lastRow, lastCol)).Value
+    
+    ' *** PERFORMANCE: Pre-calculate maximum possible output size ***
+    Dim maxPossibleRows As Long
+    maxPossibleRows = (lastRow - FIRST_DATA_ROW + 1) * (lastCol - FIRST_TASK_COL + 1)
+    
+    Dim outArr() As Variant
+    ReDim outArr(1 To maxPossibleRows, 1 To 7)
+    
+    Dim outPtr As Long: outPtr = 1
+    Dim i As Long, j As Long, entryCount As Long, taskName As String, region As String, taskOnly As String
+    Dim aht As Variant, prodHrs As Variant
+    Const VALID_REGIONS As String = ",BC,AB,CT,ON,QC,MT,YK,"
+    
+    ' *** PERFORMANCE: Optimized inner loop with early exits ***
+    For i = FIRST_DATA_ROW To lastRow
+        For j = FIRST_TASK_COL To lastCol
+            entryCount = Val(inArr(i, j))
+            If entryCount > 0 Then
+                taskName = CStr(inArr(FIRST_TASK_ROW, j))
+                
+                ' *** PERFORMANCE: Faster region detection ***
+                Dim spacePos As Long: spacePos = InStr(taskName, " ")
+                If spacePos > 0 Then
+                    Dim cand As String: cand = Left(taskName, spacePos - 1)
+                    If InStr(1, VALID_REGIONS, "," & cand & ",", vbTextCompare) > 0 Then
+                        region = cand: taskOnly = Mid(taskName, spacePos + 1)
+                    Else
+                        region = "AR": taskOnly = taskName
+                    End If
+                Else
+                    region = "AR": taskOnly = taskName
+                End If
+                
+                ' *** PERFORMANCE: Faster lookup ***
+                If dict.Exists(taskName) Then aht = dict(taskName) Else aht = "N/A"
+                If IsNumeric(aht) Then prodHrs = entryCount * aht / 60 Else prodHrs = "N/A"
+                
+                outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, 1): outArr(outPtr, 3) = region
+                outArr(outPtr, 4) = taskOnly: outArr(outPtr, 5) = entryCount: outArr(outPtr, 6) = aht
+                outArr(outPtr, 7) = prodHrs: outPtr = outPtr + 1
+            End If
+        Next j
+    Next i
+    
+    If outPtr = 1 Then Exit Sub
+    
+    ' *** PERFORMANCE: Bulk write to output ***
+    Dim lastOutRow As Long
+    lastOutRow = wsOutput.Cells(wsOutput.Rows.Count, 1).End(xlUp).row
+    If lastOutRow = 1 And wsOutput.Cells(1, 1).Value = "" Then
+        wsOutput.Range("A1").Resize(1, 7).Value = Array("Date", "Name", "Region", "Task", "Count", "Avg Handle (min)", "Productive Hours")
+        lastOutRow = 1
+    End If
+    
+    ' *** PERFORMANCE: Write only the actual data rows ***
+    wsOutput.Cells(lastOutRow + 1, 1).Resize(outPtr - 1, 7).Value = outArr
+    
+    ' *** PERFORMANCE: Apply AutoFilter once ***
+    If wsOutput.AutoFilterMode Then wsOutput.AutoFilterMode = False
+    wsOutput.Range("A1").AutoFilter
+    
+    Debug.Print "PERFORMANCE: ProcessActivitySheet completed in " & Format((Timer - startTime), "0.00") & " seconds for " & (outPtr - 1) & " records"
+End Sub
