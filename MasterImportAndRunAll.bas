@@ -59,34 +59,28 @@ Sub Master_ImportAndRunAll()
             If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
             
                 ' *** NEW ROBUST LOGIC: Check if the data range in the dated sheet is empty ***
-                Dim sheetName As String, NeedsImport As Boolean
+                Dim sheetName As String, needsImportFlag As Boolean
                 Dim targetSheet As Worksheet
-                
                 ' We only need to check one of the two sheet types. Personal Entry is the main one.
                 sheetName = "Personal Entry " & Format(loopDate, "m-d-yy")
-                NeedsImport = True ' Assume we need to import by default
-                
+                needsImportFlag = True ' Assume we need to import by default
                 On Error Resume Next
                 Set targetSheet = ThisWorkbook.Sheets(sheetName)
                 On Error GoTo 0
-                
                 If Not targetSheet Is Nothing Then
                     ' The sheet exists. Now check if the core data range has any values.
                     ' We use CountA which is very fast for this check.
                     ' Define a generous range to check for data.
                     Dim dataCheckRange As Range
                     Set dataCheckRange = targetSheet.Range("C3:EZ50") ' Checks a large, fixed area.
-                    
                     If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
                         ' Data exists, so we DON'T need to import.
-                        NeedsImport = False
+                        needsImportFlag = False
                     End If
                 End If
-                ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
-                
+                ' If targetSheet is Nothing, it doesn't exist, so needsImportFlag remains True.
                 Set targetSheet = Nothing ' Reset for next loop iteration
-                
-                If NeedsImport Then
+                If needsImportFlag Then
                     Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
                     Debug.Print "Attempting to import data for: " & Format(loopDate, "M/D/YYYY") & " (" & Format(loopDate, "dddd") & ")"
                     
