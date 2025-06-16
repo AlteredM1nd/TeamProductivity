@@ -40,7 +40,6 @@ Sub Master_ImportAndRunAll()
         Case Else: lastWorkdayDate = Date - 1 ' Tue-Sat -> Yesterday
     End Select
     
-<<<<<<< HEAD
     ' --- 2. COLLECT ALL MISSING DATES ---
     loopDate = lastProcessedDate + 1
     missingCount = 0
@@ -50,7 +49,7 @@ Sub Master_ImportAndRunAll()
                 ReDim Preserve missingDates(missingCount)
                 missingDates(missingCount) = loopDate
                 missingCount = missingCount + 1
-=======
+
     ' --- 2. LOOP THROUGH AND IMPORT ONLY IF DATA IS MISSING ---
     If lastProcessedDate >= lastWorkdayDate Then
         Application.StatusBar = "Data is already up to date. Proceeding to calculations."
@@ -138,7 +137,6 @@ Sub Master_ImportAndRunAll()
                     Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
                     Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
                 End If
->>>>>>> 4e74f9605c820c99be86dbfcbb7b191731c70b5b
             End If
         End If
         loopDate = loopDate + 1
@@ -174,179 +172,6 @@ CleanUp:
     Dim endTime As Double: endTime = Timer
     Debug.Print "TOTAL EXECUTION TIME: " & Format((endTime - startTime), "0.00") & " seconds"
 End Sub
-
-'==========================================================================
-' --- HELPER FUNCTION TO IMPORT DATA (Works with Hidden Sheets) ---
-'==========================================================================
-Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
-    Dim sourceURL As String, sourceWB As Workbook, targetWB As Workbook
-    Dim processDateStr As String
-    Dim ws As Worksheet, parsedDateStr As String
-    Dim sourcePersonal As Worksheet, sourceNonEntry As Worksheet
-    Dim targetPersonal As Worksheet, targetNonEntry As Worksheet
-    Dim templatePersonal As Worksheet, templateNonEntry As Worksheet
-    
-    On Error GoTo ErrorHandler
-    
-    ' --- 1. Get SharePoint URL and Template Sheets ---
-    Set targetWB = ThisWorkbook
-    sourceURL = targetWB.Sheets("Config").Range("Config_SourceWorkbookPath").Value
-    
-    On Error Resume Next
-    Set templatePersonal = targetWB.Sheets("Personal Entry")
-    Set templateNonEntry = targetWB.Sheets("Non-Entry Hrs")
-    On Error GoTo 0
-    If templatePersonal Is Nothing Or templateNonEntry Is Nothing Then
-        MsgBox "Required template sheets ('Personal Entry', 'Non-Entry Hrs') were not found.", vbCritical
-        Exit Function
-    End If
-    
-    processDateStr = Format(processDate, "yyyy-mm-dd")    ' --- 2. Open Source Workbook and Find Sheets for the given date ---
-    ' *** ENHANCED ERROR HANDLING FOR SOURCE WORKBOOK ACCESS ***
-    On Error GoTo SourceWorkbookError
-    Set sourceWB = Workbooks.Open(sourceURL, ReadOnly:=True, UpdateLinks:=False)
-    On Error GoTo ErrorHandler
-    
-    For Each ws In sourceWB.Worksheets
-        If sourcePersonal Is Nothing And ws.name Like "Personal Entry *" Then
-            If ParseDateFromName(ws.name, "Personal Entry ") = processDateStr Then Set sourcePersonal = ws
-        End If
-        If sourceNonEntry Is Nothing And ws.name Like "Non-Entry Hrs *" Then
-            If ParseDateFromName(ws.name, "Non-Entry Hrs ") = processDateStr Then Set sourceNonEntry = ws
-        End If
-    Next ws
-    
-    If sourcePersonal Is Nothing Or sourceNonEntry Is Nothing Then
-        ' *** IMPROVED ERROR HANDLING ***
-        Debug.Print "Could not find source sheets for date " & Format(processDate, "M/D/YYYY") & " in the source workbook."
-        
-        ' Log which specific sheets were missing for better debugging
-        If sourcePersonal Is Nothing Then Debug.Print "Missing: Personal Entry " & Format(processDate, "m-d-yy")
-        If sourceNonEntry Is Nothing Then Debug.Print "Missing: Non-Entry Hrs " & Format(processDate, "m-d-yy")
-        
-        ' On Monday, if we're looking for Friday data and it's missing, this is more critical
-        If Weekday(Date, vbMonday) = 1 And Weekday(processDate, vbMonday) = 5 Then
-            Debug.Print "WARNING: Monday processing failed to find Friday data - this may indicate source system delays"
-            ' Still continue with success to avoid blocking the entire process
-        End If
-        
-        GoTo CleanUpAndExit_Success
-    End If
-    
-    ' --- 3. Prepare Target Sheets: Find or Create Them ---
-    Dim personalSheetName As String: personalSheetName = sourcePersonal.name
-    Dim nonEntrySheetName As String: nonEntrySheetName = sourceNonEntry.name
-    
-    ' -- Handle Personal Entry Sheet --
-    On Error Resume Next
-    Set targetPersonal = targetWB.Sheets(personalSheetName)
-    On Error GoTo 0
-    If targetPersonal Is Nothing Then
-        ' *** ROBUST CHANGE: Directly create and assign the new sheet ***
-        templatePersonal.Copy After:=targetWB.Sheets(targetWB.Sheets.Count)
-        Set targetPersonal = targetWB.Sheets(targetWB.Sheets.Count) ' Get a direct reference
-        targetPersonal.name = personalSheetName
-    Else
-        targetPersonal.Range("C3", targetPersonal.UsedRange.SpecialCells(xlCellTypeLastCell)).ClearContents
-    End If
-    
-    ' -- Handle Non-Entry Sheet --
-    On Error Resume Next
-    Set targetNonEntry = targetWB.Sheets(nonEntrySheetName)
-    On Error GoTo 0
-    If targetNonEntry Is Nothing Then
-        ' *** ROBUST CHANGE: Directly create and assign the new sheet ***
-        templateNonEntry.Copy After:=targetWB.Sheets(targetWB.Sheets.Count)
-        Set targetNonEntry = targetWB.Sheets(targetWB.Sheets.Count) ' Get a direct reference
-        targetNonEntry.name = nonEntrySheetName
-    Else
-        targetNonEntry.Range("D2", targetNonEntry.UsedRange.SpecialCells(xlCellTypeLastCell)).ClearContents
-    End If
-
-    ' --- 4. Copy Data via "Clean and Paste" Method ---
-    Dim dataArray As Variant, r As Long, c As Long
-    
-    ' -- For Personal Entry --
-    Dim lastDataRowPE As Long, lastDataColPE As Long
-    
-    ' Find the last row based on names in column A of the SOURCE sheet
-    lastDataRowPE = sourcePersonal.Cells(sourcePersonal.Rows.Count, "A").End(xlUp).row
-    
-    ' *** NEW: Find the last column based on the headers in your LOCAL TEMPLATE ***
-    lastDataColPE = templatePersonal.Cells(2, templatePersonal.Columns.Count).End(xlToLeft).Column
-    
-    If lastDataRowPE >= 3 And lastDataColPE >= 3 Then ' Ensure there is data to copy
-        ' Define the source data range using the dimensions we found
-        Dim sourceDataRangePE As Range
-        Set sourceDataRangePE = sourcePersonal.Range(sourcePersonal.Cells(3, 3), sourcePersonal.Cells(lastDataRowPE, lastDataColPE))
-        
-        ' Step 1: Copy to memory
-        dataArray = sourceDataRangePE.Value2
-        
-        ' Step 2: Clean in memory
-        For r = 1 To UBound(dataArray, 1)
-            For c = 1 To UBound(dataArray, 2)
-                If IsError(dataArray(r, c)) Then dataArray(r, c) = "" ' Replace errors with blanks
-            Next c
-        Next r
-        
-        ' Step 3: Paste from memory
-        targetPersonal.Range("C3").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
-    End If
-    
-    ' -- For Non-Entry Hrs --
-    Dim lastDataRowNE As Long, lastDataColNE As Long
-    lastDataRowNE = sourceNonEntry.Cells(sourceNonEntry.Rows.Count, "A").End(xlUp).row
-    lastDataColNE = sourceNonEntry.Cells(1, sourceNonEntry.Columns.Count).End(xlToLeft).Column
-    If lastDataRowNE >= 2 And lastDataColNE >= 4 Then
-        dataArray = sourceNonEntry.Range(sourceNonEntry.Cells(2, 4), sourceNonEntry.Cells(lastDataRowNE, lastDataColNE)).Value2
-        For r = 1 To UBound(dataArray, 1)
-            For c = 1 To UBound(dataArray, 2)
-                If IsError(dataArray(r, c)) Then dataArray(r, c) = ""
-            Next c
-        Next r
-        targetNonEntry.Range("D2").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
-    End If
-    
-CleanUpAndExit_Success:
-    ImportDataForDate = True ' Signal success to the master loop
-
-CleanUpAndExit_Fail:
-    If Not sourceWB Is Nothing Then sourceWB.Close SaveChanges:=False
-    Erase dataArray
-    Exit Function
-
-SourceWorkbookError:
-    ' *** SPECIFIC ERROR HANDLING FOR SOURCE WORKBOOK ACCESS ISSUES ***
-    Debug.Print "ERROR: Could not open source workbook: " & sourceURL
-    Debug.Print "Error Description: " & Err.Description
-    
-    ' Log additional details for Monday-Friday scenarios
-    If Weekday(Date, vbMonday) = 1 And Weekday(processDate, vbMonday) = 5 Then
-        Debug.Print "WARNING: Monday attempting to access source workbook for Friday data"
-        Debug.Print "This may indicate SharePoint sync delays over the weekend"
-    End If
-    
-    ImportDataForDate = False
-    Resume CleanUpAndExit_Fail
-
-ErrorHandler:
-    Debug.Print "ERROR in ImportDataForDate: " & Err.Description & " (Error " & Err.Number & ")"
-    
-    ' Enhanced error reporting for Monday-Friday scenarios
-    If Weekday(Date, vbMonday) = 1 And Weekday(processDate, vbMonday) = 5 Then
-        Debug.Print "CONTEXT: Monday processing Friday data - error may be related to weekend data availability"
-    End If
-    
-    ' Show detailed error for unexpected issues
-    MsgBox "An unexpected error occurred while importing data for " & Format(processDate, "M/D/YYYY") & "." & vbNewLine & vbNewLine & _
-           "Error: " & Err.Description & vbNewLine & _
-           "Error Number: " & Err.Number, vbCritical, "Import Error"
-    
-    ImportDataForDate = False ' Signal failure to the master loop
-    Resume CleanUpAndExit_Fail
-End Function
-
 
 '==========================================================================
 ' --- MAIN CALCULATION SUBROUTINE (Rebuilds from 2024 Onwards) ---
