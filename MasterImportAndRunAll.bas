@@ -64,10 +64,10 @@ Sub Master_ImportAndRunAll()
                     ' Define a generous range to check for data.
                     Dim dataCheckRange As Range
                     Set dataCheckRange = targetSheet.Range("C3:EZ50") ' Checks a large, fixed area.
-                    
-                    If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
+                      If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
                         ' Data exists, so we DON'T need to import.
-                        needsImport = False                    End If
+                        needsImport = False
+                    End If
                 End If
                 ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
                 
