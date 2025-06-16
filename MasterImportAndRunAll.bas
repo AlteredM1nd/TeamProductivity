@@ -67,9 +67,9 @@ Sub Master_ImportAndRunAll()
                     
                     If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
                         ' Data exists, so we DON'T need to import.
-                        needsImport = False
-                    End If
-                End If                ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
+                        needsImport = False                    End If
+                End If
+                ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
                 
                 Set targetSheet = Nothing ' Reset for next loop iteration
                 
@@ -121,11 +121,11 @@ Sub Master_ImportAndRunAll()
                         Debug.Print "Successfully imported data for: " & Format(loopDate, "M/D/YYYY") & " (attempt " & retryCount & ")"
                     End If
                 Else
-                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
-                    Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
+                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."                    Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
                 End If
             End If
-            loopDate = loopDate + 1        Loop
+            loopDate = loopDate + 1
+        Loop
     End If
 
     ' --- 3. RUN THE FINAL CALCULATIONS ---
@@ -184,7 +184,9 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
         If sourceNonEntry Is Nothing And ws.name Like "Non-Entry Hrs *" Then
             If ParseDateFromName(ws.name, "Non-Entry Hrs ") = processDateStr Then Set sourceNonEntry = ws
         End If
-    Next ws    If sourcePersonal Is Nothing Or sourceNonEntry Is Nothing Then
+    Next ws    
+    
+    If sourcePersonal Is Nothing Or sourceNonEntry Is Nothing Then
         ' *** IMPROVED ERROR HANDLING ***
         Debug.Print "Could not find source sheets for date " & Format(processDate, "M/D/YYYY") & " in the source workbook."
         
@@ -330,9 +332,8 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     Dim dailyHoursDict As Object, personDaySickAwayHoursDict As Object, personMonthlyData As Object, personWeeklyData As Object, allTeamMembersMasterDict As Object
     Dim dashboardMonthlyAggregator As Object, allActivityDays As Object, personMonthlyAdjWorkdaySum As Object, personWeeklyAdjWorkdaySum As Object
     Dim arrOutput As Variant, arrOutputNE As Variant, weeklyOutputArray As Variant, monthlyOutputArray As Variant, dailyOutputArray As Variant
-    Dim lastRowOutput As Long, lastRowOutputNE As Long, rowIdx As Long, monthRow As Long, weeklyRowCount As Long, dailyRowCount As Long, monthlyRowCount As Long
-    Dim key As Variant, personName As String, workDate: Date, entryType As String, dailyHours As Double, overallStartDate As Date, overallEndDate As Date
-    Dim monthKey As String, personMonthKey As String, personWeekKey As String, personDayKey As String, weekStartDate: Date, weekEndDate: Date, weekStartDateStr As String
+    Dim lastRowOutput As Long, lastRowOutputNE As Long, rowIdx As Long, monthRow As Long, weeklyRowCount As Long, dailyRowCount As Long, monthlyRowCount As Long    Dim key As Variant, personName As String, workDate As Date, entryType As String, dailyHours As Double, overallStartDate As Date, overallEndDate As Date
+    Dim monthKey As String, personMonthKey As String, personWeekKey As String, personDayKey As String, weekStartDate As Date, weekEndDate As Date, weekStartDateStr As String
     Dim endTime As Double, execTime As String, k_variant As Variant, parts As Variant, sortMap As Object, sortKey As String, originalKey As String, sortKeys() As String, sortIdx As Long
     Dim actualWorkDays As Long, adjustedWorkDays As Double, totalProdHrsPersonMonth As Double, avgDailyPerson As Double, activeMMCount As Long, totalHrs As Double, totalAdjDays As Double, membersMetTarget As Long, metTargetPercent As Double, prodEligibleCount As Long, metTargetFlag As Boolean
     Dim W_totalProdHrs As Double, W_actualWDays As Long, W_totalSAHrs As Double, W_equivSADays As Double, W_adjWDays As Double, W_avgDaily As Double, prodValue_weekly As Double
