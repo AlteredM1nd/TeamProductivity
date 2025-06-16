@@ -67,7 +67,7 @@ Sub Master_ImportAndRunAll()
     ' --- 4. RUN THE FINAL CALCULATIONS ONLY IF IMPORT NEEDED OR OUTPUT IS EMPTY ---
     If importNeeded Or wsOutput.Cells(wsOutput.Rows.Count, "A").End(xlUp).row <= 1 Then
         Debug.Print "PERFORMANCE: Starting calculations at " & Timer
-        Call CalculateProductivityMetrics(startTime)
+        Call CalculateProductivityMetrics(startTime, missingDates, missingCount)
     Else
         Debug.Print "PERFORMANCE: Skipped calculations, no new data imported at " & Timer
     End If
@@ -262,7 +262,7 @@ End Function
 '==========================================================================
 ' --- MAIN CALCULATION SUBROUTINE (Rebuilds from 2024 Onwards) ---
 '==========================================================================
-Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
+Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByRef datesToProcess() As Date = Nothing, Optional ByVal dateCount As Long = 0)
     ' *** PERFORMANCE: Start metrics calculation timing ***
     Dim metricsStartTime As Double: metricsStartTime = Timer
     Application.StatusBar = "Calculating productivity metrics..."
@@ -309,12 +309,21 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     Application.StatusBar = "Step 3: Rebuilding Output sheets from all dated sources for the year..."
     Set wsOutput = ThisWorkbook.Sheets("Output")
     Set wsOutputNE = ThisWorkbook.Sheets("OutputNE")
-    wsOutput.Cells.Clear
-    wsOutputNE.Cells.Clear
-    
+    If Not IsMissing(datesToProcess) And Not IsEmpty(datesToProcess) And dateCount > 0 Then
+        ' Only process/append for the provided dates
+        Dim processDatesDict As Object
+        Set processDatesDict = CreateObject("Scripting.Dictionary")
+        Dim i As Long
+        For i = 0 To dateCount - 1
+            processDatesDict(Format(datesToProcess(i), "yyyy-mm-dd")) = 1
+        Next i
+        ' Do NOT clear the output sheets, just append/update for these dates
+    Else
+        wsOutput.Cells.Clear
+        wsOutputNE.Cells.Clear
+    End If
     Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
     Dim reportStartDate As Date: reportStartDate = DateSerial(2024, 1, 1)
-    
     For Each localSheet In ThisWorkbook.Worksheets
         If localSheet.name Like "Personal Entry *" Then
             If localSheet.name <> "Personal Entry" Then
@@ -322,7 +331,9 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
                     If sheetDate >= reportStartDate Then
-                        Call ProcessActivitySheet(localSheet, parsedDate)
+                        If (IsMissing(datesToProcess) Or IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
+                            Call ProcessActivitySheet(localSheet, parsedDate)
+                        End If
                     End If
                 End If
             End If
@@ -332,7 +343,9 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
                     If sheetDate >= reportStartDate Then
-                        Call ProcessNonEntrySheet(localSheet, parsedDate)
+                        If (IsMissing(datesToProcess) Or IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
+                            Call ProcessNonEntrySheet(localSheet, parsedDate)
+                        End If
                     End If
                 End If
             End If
@@ -675,7 +688,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
                 If .AutoFilterMode Then .AutoFilterMode = False
                 .Range("A3:H3").AutoFilter
             End If
-        End If
+        End With
         .Columns("A:H").AutoFit: Application.Goto .Range("A1"), True
     End With
     
