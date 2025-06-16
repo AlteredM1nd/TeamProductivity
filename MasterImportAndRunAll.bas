@@ -1,33 +1,10 @@
 ' =========================================================================
 ' --- MAIN MODULE (CONTROL FLOW & REPORTING) ---
-' ==================================================        ' On Monday, if we're looking for Friday data and it's missing, this is more critical
-        If Weekday(Date, vbMonday) = 1 And Weekday(processDate, vbMonday) = 5 Then
-            Debug.Print "CRITICAL: Monday processing failed to find Friday data - this may indicate source system delays"
-            
-            ' Check if we should offer the user options
-            Dim userResponse As VbMsgBoxResult
-            userResponse = MsgBox("Friday's data sheets were not found in the source workbook." & vbCrLf & vbCrLf & _
-                                 "This could mean:" & vbCrLf & _
-                                 "• Friday data entry is not complete yet" & vbCrLf & _
-                                 "• SharePoint sync is delayed" & vbCrLf & _
-                                 "• The source workbook needs to be updated" & vbCrLf & vbCrLf & _
-                                 "Do you want to continue processing without Friday data?" & vbCrLf & _
-                                 "(You can run this again later to get Friday data)", _
-                                 vbYesNo + vbQuestion, "Friday Data Not Available")
-            
-            If userResponse = vbNo Then
-                ' User wants to stop and try again later
-                Debug.Print "User chose to stop processing until Friday data is available"
-                ImportDataForDate = False
-                Resume CleanUpAndExit_Fail
-            Else
-                Debug.Print "User chose to continue without Friday data"
-            End If
-        End If==================
+' =========================================================================
 Option Explicit
 
 '==========================================================================
-' --- MASTER SUBROUTINE (Checks if Data Range is Empty) ---
+' --- MASTER SUBROUTINE (with Performance Optimizations) ---
 '==========================================================================
 Sub Master_ImportAndRunAll()
     Dim startTime As Double: startTime = Timer
@@ -92,10 +69,11 @@ Sub Master_ImportAndRunAll()
                         ' Data exists, so we DON'T need to import.
                         needsImport = False
                     End If
-                End If
-                ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
+                End If                ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
                 
-                Set targetSheet = Nothing ' Reset for next loop iteration                If needsImport Then
+                Set targetSheet = Nothing ' Reset for next loop iteration
+                
+                If needsImport Then
                     Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
                     Debug.Print "Attempting to import data for: " & Format(loopDate, "M/D/YYYY") & " (" & Format(loopDate, "dddd") & ")"
                     
@@ -147,42 +125,7 @@ Sub Master_ImportAndRunAll()
                     Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
                 End If
             End If
-            loopDate = loopDate + 1
-        Loop
-    End If
-
-    ' --- 2. BULK IMPORT OPTIMIZATION: Process all missing dates in one source workbook session ---
-    If lastProcessedDate >= lastWorkdayDate Then
-        Application.StatusBar = "Data is already up to date. Proceeding to calculations."
-    Else
-        ' *** NEW: Collect all dates that need processing first ***
-        Dim datesToProcess() As Date
-        Dim dateCount As Long: dateCount = 0
-        
-        Application.StatusBar = "Analyzing missing data..."
-        loopDate = lastProcessedDate + 1
-        Do While loopDate <= lastWorkdayDate
-            If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
-                ' Quick check if data exists (optimized)
-                If NeedsImport(loopDate) Then
-                    ReDim Preserve datesToProcess(dateCount)
-                    datesToProcess(dateCount) = loopDate
-                    dateCount = dateCount + 1
-                End If
-            End If
-            loopDate = loopDate + 1
-        Loop
-        
-        ' *** BULK PROCESSING: Import all missing dates in one go ***
-        If dateCount > 0 Then
-            Application.StatusBar = "Bulk importing " & dateCount & " missing days..."
-            Debug.Print "PERFORMANCE: Processing " & dateCount & " dates in bulk mode"
-            
-            If Not BulkImportDataForDates(datesToProcess) Then
-                MsgBox "Bulk import process failed. Please check the source workbook and try again.", vbExclamation
-                GoTo CleanUp
-            End If
-        End If
+            loopDate = loopDate + 1        Loop
     End If
 
     ' --- 3. RUN THE FINAL CALCULATIONS ---
