@@ -774,26 +774,16 @@ AllDone:
     
     ThisWorkbook.Sheets("ProductivityDashboard").Activate
     MsgBox "Full process complete! Data was imported and reports generated." & vbNewLine & _
-           "Total execution time: " & execTime & vbNewLine & vbNewLine & _
-           "Performance details logged to Debug console.", vbInformation, "Process Complete"
+           "Total execution time: " & execTime & vbNewLine & vbNewLine & _           "Performance details logged to Debug console.", vbInformation, "Process Complete"
 End Sub
 
 '==========================================================================
-' --- HELPER FUNCTION TO IMPORT DATA (Works with Hidden Sheets) ---
+' --- PERFORMANCE OPTIMIZED HELPER FUNCTIONS ---
 '==========================================================================
-Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
-    Dim sourceURL As String, sourceWB As Workbook, targetWB As Workbook
-    Dim processDateStr As String
-    Dim ws As Worksheet, parsedDateStr As String
-    Dim sourcePersonal As Worksheet, sourceNonEntry As Worksheet
-    Dim targetPersonal As Worksheet, targetNonEntry As Worksheet
-    Dim templatePersonal As Worksheet, templateNonEntry As Worksheet
-    
-    On Error GoTo ErrorHandler
-    
-    ' --- 1. Get SharePoint URL and Template Sheets ---
-    Set targetWB = ThisWorkbook
-    sourceURL = targetWB.Sheets("Config").Range("Config_SourceWorkbookPath").Value
+
+'==========================================================================
+' --- FAST CHECK: Determine if a date needs importing without heavy operations ---
+'==========================================================================
     
     On Error Resume Next
     Set templatePersonal = targetWB.Sheets("Personal Entry")
