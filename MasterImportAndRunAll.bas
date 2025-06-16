@@ -49,92 +49,11 @@ Sub Master_ImportAndRunAll()
                 ReDim Preserve missingDates(missingCount)
                 missingDates(missingCount) = loopDate
                 missingCount = missingCount + 1
-
-    ' --- 2. LOOP THROUGH AND IMPORT ONLY IF DATA IS MISSING ---
-    If lastProcessedDate >= lastWorkdayDate Then
-        Application.StatusBar = "Data is already up to date. Proceeding to calculations."
-    Else
-        loopDate = lastProcessedDate + 1
-        Do While loopDate <= lastWorkdayDate
-            If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
-            
-                ' *** NEW ROBUST LOGIC: Check if the data range in the dated sheet is empty ***
-                Dim sheetName As String, needsImportFlag As Boolean
-                Dim targetSheet As Worksheet
-                ' We only need to check one of the two sheet types. Personal Entry is the main one.
-                sheetName = "Personal Entry " & Format(loopDate, "m-d-yy")
-                needsImportFlag = True ' Assume we need to import by default
-                On Error Resume Next
-                Set targetSheet = ThisWorkbook.Sheets(sheetName)
-                On Error GoTo 0
-                If Not targetSheet Is Nothing Then
-                    ' The sheet exists. Now check if the core data range has any values.
-                    ' We use CountA which is very fast for this check.
-                    ' Define a generous range to check for data.
-                    Dim dataCheckRange As Range
-                    Set dataCheckRange = targetSheet.Range("C3:EZ50") ' Checks a large, fixed area.
-                    If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
-                        ' Data exists, so we DON'T need to import.
-                        needsImportFlag = False
-                    End If
-                End If
-                ' If targetSheet is Nothing, it doesn't exist, so needsImportFlag remains True.
-                Set targetSheet = Nothing ' Reset for next loop iteration
-                If needsImportFlag Then
-                    Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
-                    Debug.Print "Attempting to import data for: " & Format(loopDate, "M/D/YYYY") & " (" & Format(loopDate, "dddd") & ")"
-                    
-                    ' *** RETRY LOGIC FOR CRITICAL MONDAY-FRIDAY PROCESSING ***
-                    Dim importSuccess As Boolean: importSuccess = False
-                    Dim retryCount As Integer: retryCount = 0
-                    Dim maxRetries As Integer: maxRetries = 1 ' Default to 1 retry
-                    
-                    ' On Monday processing Friday data, allow more retries
-                    If Weekday(Date, vbMonday) = 1 And Weekday(loopDate, vbMonday) = 5 Then
-                        maxRetries = 3
-                        Debug.Print "Monday-Friday scenario detected. Using enhanced retry logic."
-                    End If
-                    
-                    Do While Not importSuccess And retryCount <= maxRetries
-                        If retryCount > 0 Then
-                            Debug.Print "Retry attempt " & retryCount & " for " & Format(loopDate, "M/D/YYYY")
-                            Application.StatusBar = "Retry " & retryCount & ": Importing data for " & Format(loopDate, "yyyy-mm-dd")
-                            ' Small delay between retries to allow for network/SharePoint issues
-                            Application.Wait (Now + TimeValue("0:00:03"))
-                        End If
-                        
-                        importSuccess = ImportDataForDate(loopDate)
-                        retryCount = retryCount + 1
-                    Loop
-                    
-                    If Not importSuccess Then
-                        ' *** ENHANCED ERROR REPORTING FOR FAILED IMPORTS ***
-                        Dim errorMsg As String
-                        errorMsg = "CRITICAL: Failed to import data for " & Format(loopDate, "M/D/YYYY") & " (" & Format(loopDate, "dddd") & ") after " & maxRetries & " attempts."
-                        
-                        ' Special handling for Monday-Friday scenarios
-                        If Weekday(Date, vbMonday) = 1 And Weekday(loopDate, vbMonday) = 5 Then
-                            errorMsg = errorMsg & vbCrLf & vbCrLf & "MONDAY PROCESSING ISSUE:" & vbCrLf & _
-                                      "• Friday's sheets may not exist in the source workbook yet" & vbCrLf & _
-                                      "• Check if Friday data entry was completed" & vbCrLf & _
-                                      "• Verify SharePoint source workbook is accessible" & vbCrLf & _
-                                      "• Consider contacting data entry team about Friday completion" & vbCrLf & vbCrLf & _
-                                      "You can try running this again in 30-60 minutes, or manually check the source workbook."
-                        End If
-                        
-                        MsgBox errorMsg, vbCritical, "Data Import Failed"
-                        GoTo CleanUp
-                    Else
-                        Debug.Print "Successfully imported data for: " & Format(loopDate, "M/D/YYYY") & " (attempt " & retryCount & ")"
-                    End If
-                Else
-                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
-                    Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
-                End If
             End If
         End If
         loopDate = loopDate + 1
     Loop
+    
     Debug.Print "PERFORMANCE: Missing dates to import: " & missingCount & " at " & Timer
     
     ' --- 3. BULK IMPORT IF NEEDED ---
