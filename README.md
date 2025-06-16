@@ -1,74 +1,82 @@
 # Team Productivity Tracker
 
-A comprehensive VBA-based Excel solution for tracking, analyzing, and reporting team productivity across multiple workbooks and time periods. This system automates data import from SharePoint/network sources and generates detailed productivity reports with configurable targets and metrics.
+A robust, modular VBA-based Excel solution for tracking, analyzing, and reporting team productivity. This system automates data import from SharePoint/network sources, supports incremental and bulk processing, and generates detailed productivity reports with configurable targets and metrics.
 
-## 🚀 Features
+---
 
-- **Automated Data Import**: Intelligent catch-up functionality imports data from remote workbooks
-- **Dual Processing System**: Handles both activity-based ("Personal Entry") and time-based ("Non-Entry Hrs") data
-- **Configurable Metrics**: Set daily targets, sick/away day parameters, and productivity thresholds
-- **Multi-Level Reporting**: Daily, weekly, and monthly productivity breakdowns with visual indicators
-- **Away Time Integration**: Processes sick/vacation time to calculate adjusted productivity metrics
-- **Bulk Processing**: Historical data processing across multiple months
-- **Template Management**: Automated monthly sheet creation from templates
-- **Regional Support**: Multi-region task categorization (BC, AB, CT, ON, QC, MT, YK, AR)
+## 🚀 Key Features
+
+- **Automated Data Import**: Bulk and incremental import from SharePoint/network sources, with intelligent catch-up for missing workdays.
+- **Incremental Output Updates**: Only processes and updates output for newly imported or changed dates, making daily runs extremely fast.
+- **Configurable Metrics**: Set daily targets, sick/away day parameters, and productivity thresholds via the Config sheet.
+- **Multi-Level Reporting**: Generates daily, weekly, and monthly productivity breakdowns with color-coded performance indicators.
+- **Away Time Integration**: Processes sick/vacation time to calculate adjusted productivity metrics.
+- **Bulk Historical Processing**: Efficiently processes large date ranges for onboarding or backfilling data.
+- **Template Management**: Automated monthly sheet creation from templates.
+- **Regional Support**: Automatic region categorization (BC, AB, CT, ON, QC, MT, YK, AR).
+- **Performance Optimizations**: Uses array operations, disables screen updating, and minimizes worksheet interaction for speed.
+
+---
 
 ## 📁 Project Structure
 
 ```
 TeamProductivity/
-├── MasterImportAndRunAll.bas          # Main orchestration and reporting engine
-├── DataProcessing.bas                 # Core data transformation functions
-├── CreateMonthlySheetsFromTemplates.bas # Template-based sheet creation
-├── PersonalEntryBulkRunner.bas        # Bulk processing for activity data
-├── NonEntryBulkRunner.bas             # Bulk processing for time tracking data
+├── MasterImportAndRunAll.bas          # Main orchestration, import, and reporting engine
+├── DataProcessing.bas                 # Core data transformation and output logic
+├── CreateMonthlySheetsFromTemplates.bas # Template-based monthly sheet creation
+├── PersonalEntryBulkRunner.bas        # Bulk processing for "Personal Entry" data
+├── NonEntryBulkRunner.bas             # Bulk processing for "Non-Entry Hrs" data
 ├── ProcessAwayTime.bas                # Away time processing (basic)
-├── ProcessAwayTime_SelectDestination.bas # Away time processing (advanced)
+├── ProcessAwayTime_SelectDestination.bas # Away time processing (advanced, with file selection)
 └── README.md                          # This file
 ```
+
+---
 
 ## 🏗️ Architecture Overview
 
 ### Core Modules
 
-#### [`MasterImportAndRunAll.bas`](MasterImportAndRunAll.bas)
-**Main Control Module**
-- `Master_ImportAndRunAll()`: Primary execution subroutine with intelligent catch-up
-- `ImportDataForDate()`: Date-specific data import from remote SharePoint sources
-- `CalculateProductivityMetrics()`: Comprehensive reporting and analysis engine
+#### `MasterImportAndRunAll.bas`
+- `Master_ImportAndRunAll()`: Main entry point. Handles performance optimizations, determines missing dates, performs bulk import, and triggers incremental or full reporting.
+- `BulkImportDataForDates()`: Opens the source workbook once and imports all missing dates in a single session.
+- `CalculateProductivityMetrics()`: Rebuilds or incrementally updates output and report sheets based on which dates were imported.
+- `NeedsImport()`: Fast check to determine if a date needs importing.
+- Helper functions for sorting, info sheet updates, and error handling.
 
-#### [`DataProcessing.bas`](DataProcessing.bas)
-**Data Transformation Engine**
-- `ProcessActivitySheet()`: Processes "Personal Entry" activity data with regional categorization
-- `ProcessNonEntrySheet()`: Processes "Non-Entry Hrs" time tracking data
-- `ParseDateFromName()`: Utility function for extracting dates from sheet names
+#### `DataProcessing.bas`
+- `ProcessActivitySheet()`: Processes "Personal Entry" activity data, including region categorization and productivity calculations.
+- `ProcessNonEntrySheet()`: Processes "Non-Entry Hrs" time tracking data.
+- `ParseDateFromName()`: Utility for extracting dates from sheet names.
 
-#### [`CreateMonthlySheetsFromTemplates.bas`](CreateMonthlySheetsFromTemplates.bas)
-**Template Management**
-- `CreateMonthlySheetsFromTemplates()`: Creates monthly sheets for weekdays only
-- `SheetExists()`: Helper function to prevent duplicate sheet creation
+#### `CreateMonthlySheetsFromTemplates.bas`
+- `CreateMonthlySheetsFromTemplates()`: Creates monthly sheets for all workdays using templates.
+- `SheetExists()`: Prevents duplicate sheet creation.
 
 ### Bulk Processing Modules
 
-#### [`PersonalEntryBulkRunner.bas`](PersonalEntryBulkRunner.bas)
-- `BulkProcessLastYear()`: Processes 18 months of "Personal Entry" sheets
+#### `PersonalEntryBulkRunner.bas`
+- `BulkProcessLastYear()`: Processes 18 months of "Personal Entry" data.
 
-#### [`NonEntryBulkRunner.bas`](NonEntryBulkRunner.bas)
-- `BulkProcessNonEntryLastYear()`: Processes 18 months of "Non-Entry Hrs" sheets
+#### `NonEntryBulkRunner.bas`
+- `BulkProcessNonEntryLastYear()`: Processes 18 months of "Non-Entry Hrs" data.
 
 ### Away Time Processing
 
-#### [`ProcessAwayTime.bas`](ProcessAwayTime.bas)
-- `ProcessAwayTime_WithDetailedLogging()`: Basic away time processing with current workbook
+#### `ProcessAwayTime.bas`
+- `ProcessAwayTime_WithDetailedLogging()`: Basic away time processing for the current workbook.
 
-#### [`ProcessAwayTime_SelectDestination.bas`](ProcessAwayTime_SelectDestination.bas)
-- `ProcessAwayTime_SelectDestinationFile()`: Advanced version with file selection capabilities
+#### `ProcessAwayTime_SelectDestination.bas`
+- `ProcessAwayTime_SelectDestinationFile()`: Advanced away time processing with file selection.
+
+---
 
 ## 📊 Data Flow
 
 ```mermaid
 graph TD
-    A[SharePoint Source] --> B[Import Module]
+    A[SharePoint Source] --> B[Bulk Import]
     B --> C[Personal Entry Sheets]
     B --> D[Non-Entry Hrs Sheets]
     C --> E[Activity Processing]
@@ -85,215 +93,98 @@ graph TD
     K --> O[Daily Breakdown]
 ```
 
-## ⚙️ Configuration
+---
 
-The system requires several Excel sheets for configuration:
+## ⚙️ Configuration
 
 ### Required Sheets
 
-1. **Config Sheet**
-   - `Config_SourceWorkbookPath`: SharePoint URL for source data
-   - `Config_DailyTargetHours`: Daily productivity target (e.g., 6.5 hours)
-   - `Config_HoursPerSickDay`: Hours per sick/away day (e.g., 7.5 hours)
-   - `Config_SickAwayCategories`: Range containing sick/away category names
+- **Config**: Holds all key parameters (source path, targets, sick/away categories, etc.)
+- **ActivityLookup**: Maps task names to AHT and metadata.
+- **Personal Entry** and **Non-Entry Hrs**: Template sheets for new day creation.
 
-2. **ActivityLookup Sheet**
-   - Column A: Task names
-   - Column B: Average Handle Time (AHT) in minutes
-   - Column C: Additional metadata
+### Key Config Parameters
 
-3. **Template Sheets**
-   - `Personal Entry`: Template for daily activity tracking
-   - `Non-Entry Hrs`: Template for time tracking
+- `Config_SourceWorkbookPath`: SharePoint URL for source data
+- `Config_DailyTargetHours`: Daily productivity target (e.g., 6.5)
+- `Config_HoursPerSickDay`: Hours per sick/away day (e.g., 7.5)
+- `Config_SickAwayCategories`: Range of sick/away category names
+- `Config_NonProductiveTasks`: Range of non-productive task names
 
-### Regional Configuration
+---
 
-The system supports multiple regions with automatic categorization:
-- **BC** (British Columbia)
-- **AB** (Alberta)
-- **CT** (Central)
-- **ON** (Ontario)
-- **QC** (Quebec)
-- **MT** (Maritimes)
-- **YK** (Yukon)
-- **AR** (All Regions - default for unrecognized regions)
+## 🏃‍♂️ Running the System
 
-## 🚀 Getting Started
+### Daily Operations
 
-### Prerequisites
-
-- Microsoft Excel with VBA enabled
-- Access to SharePoint source workbook
-- Template sheets configured in target workbook
-
-### Initial Setup
-
-1. **Configure Source Path**
-   ```vba
-   ' In Config sheet, set:
-   Config_SourceWorkbookPath = "https://your-sharepoint-site/path/to/source.xlsx"
-   ```
-
-2. **Set Productivity Targets**
-   ```vba
-   Config_DailyTargetHours = 6.5
-   Config_HoursPerSickDay = 7.5
-   ```
-
-3. **Define Away Categories**
-   ```
-   SICK
-   PERSONAL
-   VACATION
-   BEREAVEMENT
-   FLOAT
-   MY COMMUNITY
-   STUDY
-   ```
-
-4. **Create Template Sheets**
-   - Name them exactly "Personal Entry" and "Non-Entry Hrs"
-   - Configure date cells at A2 and A1 respectively
-
-### Running the System
-
-#### Daily Operations
 ```vba
-' Run the main process (typically assigned to a button)
 Call Master_ImportAndRunAll
 ```
+- Imports only missing workdays since the last processed date.
+- Only updates output and reports for new/changed dates.
 
-#### Monthly Sheet Creation
+### Monthly Sheet Creation
+
 ```vba
-' Create sheets for a specific month
 Call CreateMonthlySheetsFromTemplates
 ```
 
-#### Bulk Historical Processing
-```vba
-' Process last 18 months of Personal Entry data
-Call BulkProcessLastYear
+### Bulk Historical Processing
 
-' Process last 18 months of Non-Entry data
+```vba
+Call BulkProcessLastYear
 Call BulkProcessNonEntryLastYear
 ```
 
-#### Away Time Processing
-```vba
-' Basic processing (current workbook)
-Call ProcessAwayTime_WithDetailedLogging
+### Away Time Processing
 
-' Advanced processing (select files)
+```vba
+Call ProcessAwayTime_WithDetailedLogging
 Call ProcessAwayTime_SelectDestinationFile
 ```
 
+---
+
 ## 📈 Reports Generated
 
-### 1. Productivity Dashboard
-**High-level monthly aggregations**
-- Active team members count
-- Total productive hours
-- Adjusted workdays (accounting for time off)
-- Target achievement percentage
-- Visual indicators (green/yellow/red) for performance
+- **Productivity Dashboard**: Monthly team summary with color-coded performance.
+- **Monthly Breakdown**: Individual monthly stats.
+- **Weekly Breakdown**: Week-by-week analysis.
+- **Daily Breakdown**: Day-by-day details, including adjusted workday factors.
 
-### 2. Monthly Breakdown
-**Individual monthly performance**
-- Total productive hours per person
-- Actual workdays count
-- Sick/away hours and equivalent days
-- Adjusted workdays calculation
-- Average productivity per adjusted day
-- Productivity percentage vs. target
-
-### 3. Weekly Breakdown
-**Week-by-week analysis**
-- Sunday-to-Saturday aggregations
-- Same metrics as monthly but weekly scope
-- Trend analysis capabilities
-
-### 4. Daily Breakdown
-**Day-by-day detailed view**
-- Individual daily productivity
-- Sick/away hours per day
-- Adjusted workday factor (0.0 to 1.0)
-- Effective target hours (pro-rated for availability)
-- Daily productivity percentage
+---
 
 ## 🎨 Visual Indicators
 
-The system uses color coding for quick performance assessment:
+- 🟢 Green: ≥ 100% of target
+- 🟡 Yellow: 90–99% of target
+- 🔴 Red: < 90% of target
 
-- 🟢 **Green**: Performance ≥ 100% of target
-- 🟡 **Yellow**: Performance 90-99% of target  
-- 🔴 **Red**: Performance < 90% of target
-
-## 🔧 Key Features Explained
-
-### Intelligent Catch-Up
-The system automatically determines the last processed date and imports all missing workdays since then, ensuring no data gaps.
-
-### Adjusted Workdays
-Calculates "effective" working time by accounting for sick/vacation hours:
-```
-Adjusted Workday Factor = 1 - (Sick/Away Hours / Hours Per Day)
-```
-
-### Productivity Calculation
-```
-Productivity % = Productive Hours / (Target Hours × Adjusted Workday Factor)
-```
-
-### Regional Processing
-Tasks prefixed with region codes (e.g., "BC Task Name") are automatically categorized by region, with "AR" as the default.
+---
 
 ## 🛠️ Maintenance & Troubleshooting
 
-### Common Issues
+- All configuration is externalized to Excel sheets.
+- Debug logging via `Debug.Print` throughout the codebase.
+- Performance optimizations: disables screen updating, uses arrays and dictionaries, minimizes worksheet interaction.
 
-1. **Source Workbook Not Found**
-   - Verify SharePoint URL in Config sheet
-   - Check network connectivity
-   - Ensure proper permissions
-
-2. **Template Sheets Missing**
-   - Verify exact sheet names: "Personal Entry", "Non-Entry Hrs"
-   - Check date cell locations (A2 for Personal Entry, A1 for Non-Entry)
-
-3. **Data Processing Errors**
-   - Ensure ActivityLookup sheet is properly formatted
-   - Check for merged cells in source data
-   - Verify date formats in sheet names
-
-### Debug Mode
-The system includes extensive debug logging:
-```vba
-Debug.Print "Processing: " & sheetName & " for date: " & processDate
-```
-
-### Performance Optimization
-- Application.ScreenUpdating disabled during processing
-- Bulk array operations for data transfer
-- Dictionary objects for fast lookups
-- Calculation mode set to manual during operations
+---
 
 ## 📋 Sheet Naming Conventions
 
-The system expects specific sheet naming patterns:
-
-- **Personal Entry**: `Personal Entry M-D-YY` (e.g., "Personal Entry 6-15-25")
-- **Non-Entry Hours**: `Non-Entry Hrs M-D-YY` (e.g., "Non-Entry Hrs 6-15-25")
-- **Output Sheets**: "Output" (Personal Entry data), "OutputNE" (Non-Entry data)
+- **Personal Entry**: `Personal Entry M-D-YY`
+- **Non-Entry Hrs**: `Non-Entry Hrs M-D-YY`
+- **Output Sheets**: "Output", "OutputNE"
 - **Report Sheets**: "ProductivityDashboard", "MonthlyBreakdown", "WeeklyBreakdown", "DailyBreakdown"
+
+---
 
 ## 🤝 Contributing
 
-When modifying the code:
-1. Maintain the existing naming conventions
-2. Add comprehensive error handling
-3. Include debug logging for troubleshooting
-4. Update documentation comments
-5. Test with sample data before production use
+- Maintain naming conventions and error handling.
+- Add debug logging for new features.
+- Update this README and code comments with any changes.
+- Test with sample data before production use.
 
 ---
 
