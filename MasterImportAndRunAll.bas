@@ -47,12 +47,12 @@ Sub Master_ImportAndRunAll()
             If Weekday(loopDate, vbMonday) < 6 Then ' Skip weekends
             
                 ' *** NEW ROBUST LOGIC: Check if the data range in the dated sheet is empty ***
-                Dim sheetName As String, needsImport As Boolean
+                Dim sheetName As String, NeedsImport As Boolean
                 Dim targetSheet As Worksheet
                 
                 ' We only need to check one of the two sheet types. Personal Entry is the main one.
                 sheetName = "Personal Entry " & Format(loopDate, "m-d-yy")
-                needsImport = True ' Assume we need to import by default
+                NeedsImport = True ' Assume we need to import by default
                 
                 On Error Resume Next
                 Set targetSheet = ThisWorkbook.Sheets(sheetName)
@@ -64,16 +64,17 @@ Sub Master_ImportAndRunAll()
                     ' Define a generous range to check for data.
                     Dim dataCheckRange As Range
                     Set dataCheckRange = targetSheet.Range("C3:EZ50") ' Checks a large, fixed area.
-                      If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
+                    
+                    If Application.WorksheetFunction.CountA(dataCheckRange) > 0 Then
                         ' Data exists, so we DON'T need to import.
-                        needsImport = False
+                        NeedsImport = False
                     End If
                 End If
                 ' If targetSheet is Nothing, it doesn't exist, so needsImport remains True.
                 
                 Set targetSheet = Nothing ' Reset for next loop iteration
                 
-                If needsImport Then
+                If NeedsImport Then
                     Application.StatusBar = "Importing data for missing/empty day: " & Format(loopDate, "yyyy-mm-dd")
                     Debug.Print "Attempting to import data for: " & Format(loopDate, "M/D/YYYY") & " (" & Format(loopDate, "dddd") & ")"
                     
@@ -121,7 +122,8 @@ Sub Master_ImportAndRunAll()
                         Debug.Print "Successfully imported data for: " & Format(loopDate, "M/D/YYYY") & " (attempt " & retryCount & ")"
                     End If
                 Else
-                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."                    Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
+                    Application.StatusBar = "Data for " & Format(loopDate, "yyyy-mm-dd") & " already exists. Skipping import."
+                    Debug.Print "Skipping import for " & Format(loopDate, "M/D/YYYY") & " - data already exists"
                 End If
             End If
             loopDate = loopDate + 1
@@ -184,7 +186,7 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
         If sourceNonEntry Is Nothing And ws.name Like "Non-Entry Hrs *" Then
             If ParseDateFromName(ws.name, "Non-Entry Hrs ") = processDateStr Then Set sourceNonEntry = ws
         End If
-    Next ws    
+    Next ws
     
     If sourcePersonal Is Nothing Or sourceNonEntry Is Nothing Then
         ' *** IMPROVED ERROR HANDLING ***
@@ -332,7 +334,8 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double)
     Dim dailyHoursDict As Object, personDaySickAwayHoursDict As Object, personMonthlyData As Object, personWeeklyData As Object, allTeamMembersMasterDict As Object
     Dim dashboardMonthlyAggregator As Object, allActivityDays As Object, personMonthlyAdjWorkdaySum As Object, personWeeklyAdjWorkdaySum As Object
     Dim arrOutput As Variant, arrOutputNE As Variant, weeklyOutputArray As Variant, monthlyOutputArray As Variant, dailyOutputArray As Variant
-    Dim lastRowOutput As Long, lastRowOutputNE As Long, rowIdx As Long, monthRow As Long, weeklyRowCount As Long, dailyRowCount As Long, monthlyRowCount As Long    Dim key As Variant, personName As String, workDate As Date, entryType As String, dailyHours As Double, overallStartDate As Date, overallEndDate As Date
+    Dim lastRowOutput As Long, lastRowOutputNE As Long, rowIdx As Long, monthRow As Long, weeklyRowCount As Long, dailyRowCount As Long, monthlyRowCount As Long
+    Dim key As Variant, personName As String, workDate As Date, entryType As String, dailyHours As Double, overallStartDate As Date, overallEndDate As Date
     Dim monthKey As String, personMonthKey As String, personWeekKey As String, personDayKey As String, weekStartDate As Date, weekEndDate As Date, weekStartDateStr As String
     Dim endTime As Double, execTime As String, k_variant As Variant, parts As Variant, sortMap As Object, sortKey As String, originalKey As String, sortKeys() As String, sortIdx As Long
     Dim actualWorkDays As Long, adjustedWorkDays As Double, totalProdHrsPersonMonth As Double, avgDailyPerson As Double, activeMMCount As Long, totalHrs As Double, totalAdjDays As Double, membersMetTarget As Long, metTargetPercent As Double, prodEligibleCount As Long, metTargetFlag As Boolean
@@ -1129,12 +1132,12 @@ Private Function BulkImportSingleDate(sourceWB As Workbook, processDate As Date)
     ' *** OPTIMIZED: Find source sheets faster with early exit ***
     For Each ws In sourceWB.Worksheets
         If sourcePersonal Is Nothing And ws.name Like "Personal Entry *" Then
-            If ParseDateFromName(ws.name, "Personal Entry ") = processDateStr Then 
+            If ParseDateFromName(ws.name, "Personal Entry ") = processDateStr Then
                 Set sourcePersonal = ws
             End If
         End If
         If sourceNonEntry Is Nothing And ws.name Like "Non-Entry Hrs *" Then
-            If ParseDateFromName(ws.name, "Non-Entry Hrs ") = processDateStr Then 
+            If ParseDateFromName(ws.name, "Non-Entry Hrs ") = processDateStr Then
                 Set sourceNonEntry = ws
             End If
         End If
