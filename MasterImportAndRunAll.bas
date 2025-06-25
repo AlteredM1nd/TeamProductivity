@@ -939,7 +939,7 @@ Private Function BulkImportSingleDate(sourceWB As Workbook, processDate As Date)
     
     If sourcePersonal Is Nothing Or sourceNonEntry Is Nothing Then
         Debug.Print "Missing source sheets for " & Format(processDate, "M/D/YYYY")
-        BulkImportSingleDate = True ' Continue processing other dates
+        BulkImportSingleDate = False ' *** FIX: Report failure so the process knows data is missing ***
         Exit Function
     End If
     
