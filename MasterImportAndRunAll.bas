@@ -272,7 +272,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
     Dim wsOutput As Worksheet, wsOutputNE As Worksheet, wsDashboard As Worksheet, wsMonthlyBreakdown As Worksheet, wsWeeklyBreakdown As Worksheet, wsDailyBreakdown As Worksheet
     Dim dailyHoursDict As Object, personDaySickAwayHoursDict As Object, personMonthlyData As Object, personWeeklyData As Object, allTeamMembersMasterDict As Object
     Dim dashboardMonthlyAggregator As Object, allActivityDays As Object, personMonthlyAdjWorkdaySum As Object, personWeeklyAdjWorkdaySum As Object
-    Dim arrOutput As Variant, arrOutputNE As Variant, weeklyOutputArray As Variant, monthlyOutputArray As Variant, dailyOutputArray As Variant
+    Dim arrOutput As Variant, arrOutputNE As Variant, weeklyOutputArray As Variant, monthlyOutputArray As Variant, dailyOutputArray As Variant, overridesDict As Object
     Dim lastRowOutput As Long, lastRowOutputNE As Long, rowIdx As Long, monthRow As Long, weeklyRowCount As Long, dailyRowCount As Long, monthlyRowCount As Long
     Dim key As Variant, personName As String, workDate As Date, entryType As String, dailyHours As Double, overallStartDate As Date, overallEndDate As Date
     Dim monthKey As String, personMonthKey As String, personWeekKey As String, personDayKey As String, weekStartDate As Date, weekEndDate As Date, weekStartDateStr As String
@@ -304,6 +304,11 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
     For Each cell In nonProdRange.Cells
         If Not IsEmpty(cell.Value) Then nonProdTasks(CStr(cell.Value)) = 1
     Next cell
+
+    '--- STEP 1.5: LOAD OVERRIDES ---
+    Application.StatusBar = "Step 2: Loading overrides..."
+    Set overridesDict = LoadOverridesDict()
+
 
     '--- STEP 2: REBUILD THE OUTPUT SHEETS FROM ALL RELEVANT DATED SHEETS ---
     Application.StatusBar = "Step 3: Rebuilding Output sheets from all dated sources for the year..."
@@ -451,6 +456,30 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
         personMonthlyData(personMonthKey)("ActualWorkDaysDict")(Format(workDate, "yyyy-mm-dd")) = 1
         personWeeklyData(personWeekKey)("ActualWorkDaysWeekDict")(Format(workDate, "yyyy-mm-dd")) = 1
     Next key
+
+    '--- NEW STEP 3.5: INTEGRATE HISTORICAL/OVERRIDE DATA ---
+    If overridesDict.Count > 0 Then
+        Application.StatusBar = "Step 4.5: Integrating historical override data..."
+        For Each key In overridesDict.Keys
+            ' Check if this person/month combo already exists from the source data
+            If Not personMonthlyData.Exists(key) Then
+                parts = Split(CStr(key), "|"): personName = parts(0): monthKey = parts(1)
+                
+                ' Add the person to the master list if they are new
+                If Not allTeamMembersMasterDict.Exists(personName) Then
+                    allTeamMembersMasterDict.Add personName, 1
+                    Debug.Print "Adding historical person from overrides: " & personName
+                End If
+
+                ' Create a placeholder entry in the monthly data dictionary. This ensures they appear in the reports.
+                Set personMonthlyData(key) = CreateObject("Scripting.Dictionary")
+                personMonthlyData(key)("TotalProdHrs") = 0
+                Set personMonthlyData(key)("ActualWorkDaysDict") = CreateObject("Scripting.Dictionary")
+                personMonthlyData(key)("TotalSickAwayHours") = 0
+                personMonthlyAdjWorkdaySum(key) = 0 ' Also create a placeholder for adjusted workday sum
+            End If
+        Next key
+    End If
     
     ' --- STEP 4: GENERATE REPORTS ---
     Application.StatusBar = "Step 5: Generating report sheets..."
@@ -473,25 +502,39 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
     Set dashboardMonthlyAggregator = CreateObject("Scripting.Dictionary")
     For Each key In personMonthlyData.Keys
         parts = Split(CStr(key), "|"): personName = parts(0): monthKey = parts(1)
-        If personMonthlyData(key)("TotalProdHrs") > 0 Or personMonthlyData(key)("TotalSickAwayHours") > 0 Then
+        
+        ' A person is relevant for the dashboard if they have logged hours OR have a manual override for the month.
+        If personMonthlyData(key)("TotalProdHrs") > 0 Or personMonthlyData(key)("TotalSickAwayHours") > 0 Or overridesDict.Exists(key) Then
             If Not dashboardMonthlyAggregator.Exists(monthKey) Then
                 Set dashboardMonthlyAggregator(monthKey) = CreateObject("Scripting.Dictionary")
                 dashboardMonthlyAggregator(monthKey)("ActiveMembersCount") = 0: dashboardMonthlyAggregator(monthKey)("ProdEligibleMembersCount") = 0
                 dashboardMonthlyAggregator(monthKey)("TotalProdHrsSum") = 0: dashboardMonthlyAggregator(monthKey)("TotalAdjWorkdaysSum") = 0
                 Set dashboardMonthlyAggregator(monthKey)("ActiveMembersDict") = CreateObject("Scripting.Dictionary"): dashboardMonthlyAggregator(monthKey)("MembersMeetingTargetCount") = 0
             End If
+            
             totalProdHrsPersonMonth = personMonthlyData(key)("TotalProdHrs"): adjustedWorkDays = personMonthlyAdjWorkdaySum(key)
             metTargetFlag = False
+            
+            ' Calculate the average daily hours for this person/month
             If adjustedWorkDays > 0 Then
                 avgDailyPerson = totalProdHrsPersonMonth / adjustedWorkDays
-                If avgDailyPerson >= DAILY_TARGET_HOURS Then metTargetFlag = True
-            ElseIf totalProdHrsPersonMonth > 0 Then metTargetFlag = True
+            Else
+                avgDailyPerson = 0
             End If
-            If adjustedWorkDays < 0 Then adjustedWorkDays = 0
+            
+            ' *** OVERRIDE LOGIC: Check if an override exists and apply it for target checking ***
+            If overridesDict.Exists(key) Then avgDailyPerson = overridesDict(key)
+            
+            ' Now, check if the potentially overridden average meets the target
+            If avgDailyPerson >= DAILY_TARGET_HOURS Then metTargetFlag = True
             If Not dashboardMonthlyAggregator(monthKey)("ActiveMembersDict").Exists(personName) Then
                  dashboardMonthlyAggregator(monthKey)("ActiveMembersDict")(personName) = 1
                  dashboardMonthlyAggregator(monthKey)("ActiveMembersCount") = dashboardMonthlyAggregator(monthKey)("ActiveMembersCount") + 1
-                 If totalProdHrsPersonMonth > 0 Then dashboardMonthlyAggregator(monthKey)("ProdEligibleMembersCount") = dashboardMonthlyAggregator(monthKey)("ProdEligibleMembersCount") + 1
+                 
+                 ' A member is "Productive" (eligible for the target %) if they have productive hours OR an override.
+                 If totalProdHrsPersonMonth > 0 Or overridesDict.Exists(key) Then
+                    dashboardMonthlyAggregator(monthKey)("ProdEligibleMembersCount") = dashboardMonthlyAggregator(monthKey)("ProdEligibleMembersCount") + 1
+                 End If
             End If
             dashboardMonthlyAggregator(monthKey)("TotalProdHrsSum") = dashboardMonthlyAggregator(monthKey)("TotalProdHrsSum") + totalProdHrsPersonMonth
             dashboardMonthlyAggregator(monthKey)("TotalAdjWorkdaysSum") = dashboardMonthlyAggregator(monthKey)("TotalAdjWorkdaysSum") + adjustedWorkDays
@@ -572,7 +615,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 .Range("A3:K3").AutoFilter
             End If
         End If
-        .Columns("A:K").AutoFit: Application.Goto .Range("A1"), True
+        .Columns("A:K").AutoFit: Application.GoTo .Range("A1"), True
     End With
 
     ' -- Monthly Breakdown --
@@ -597,8 +640,15 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 If HOURS_PER_SICK_AWAY_DAY > 0 Then equivSADays = totalSAHrs / HOURS_PER_SICK_AWAY_DAY Else equivSADays = 0
                 adjWDays = personMonthlyAdjWorkdaySum(originalKey)
                 If adjWDays < 0 Then adjWDays = 0
-                If adjWDays > 0 Then avgDaily = totalProdHrs / adjWDays Else avgDaily = 0
-                If totalProdHrs > 0 Or adjWDays > 0 Or actualWorkDays > 0 Then
+                
+                ' *** OVERRIDE LOGIC ***
+                If overridesDict.Exists(originalKey) Then
+                    avgDaily = overridesDict(originalKey) ' Use the override value
+                Else
+                    If adjWDays > 0 Then avgDaily = totalProdHrs / adjWDays Else avgDaily = 0 ' Calculate as normal
+                End If
+                
+                If totalProdHrs > 0 Or adjWDays > 0 Or actualWorkDays > 0 Or overridesDict.Exists(originalKey) Then
                     monthlyRowCount = monthlyRowCount + 1
                     monthlyOutputArray(monthlyRowCount, 1) = Format(CDate(monthPart & "-01"), "yyyy-mmm"): monthlyOutputArray(monthlyRowCount, 2) = personNamePart
                     monthlyOutputArray(monthlyRowCount, 3) = Round(totalProdHrs, 2): monthlyOutputArray(monthlyRowCount, 4) = actualWorkDays
@@ -626,7 +676,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 .Range("A3:J3").AutoFilter
             End If
         End If
-        .Columns("A:J").AutoFit: Application.Goto .Range("A1"), True
+        .Columns("A:J").AutoFit: Application.GoTo .Range("A1"), True
     End With
     
     ' -- Daily Breakdown --
@@ -687,7 +737,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
                 .Range("A3:H" & 3 + dailyRowCount).Borders.LineStyle = xlContinuous
                 If .AutoFilterMode Then .AutoFilterMode = False
                 .Range("A3:H3").AutoFilter
-                .Columns("A:H").AutoFit: Application.Goto .Range("A1"), True
+                .Columns("A:H").AutoFit: Application.GoTo .Range("A1"), True
             End If
         End If
     End With
@@ -703,7 +753,7 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
         If .Rows.Count > 3 And monthRow > 4 Then .Range("A4").Activate: ActiveWindow.FreezePanes = True
         .Cells(maxDataRow + 2, "A").Value = "Last Updated: " & Now()
         .Cells(maxDataRow + 2, "A").Font.Italic = True
-        Application.Goto .Range("A1"), True
+        Application.GoTo .Range("A1"), True
     End With
     
     GoTo AllDone
@@ -729,7 +779,7 @@ AllDone:
     
     ThisWorkbook.Sheets("ProductivityDashboard").Activate
     MsgBox "Full process complete! Data was imported and reports generated." & vbNewLine & _
-           "Total execution time: " & execTime & vbNewLine & vbNewLine & _           
+           "Total execution time: " & execTime & vbNewLine & vbNewLine & _
            "Performance details logged to Debug console.", vbInformation, "Process Complete"
 End Sub
 
@@ -800,7 +850,7 @@ Private Sub UpdateInfoSheet(ByVal dailyTarget As Double, ByVal sickDayHours As D
     currentRow = currentRow + 1
     With wsInfo
         .Columns("A").ColumnWidth = 35: .Columns("B").ColumnWidth = 110
-        .UsedRange.Rows.AutoFit: Application.Goto .Range("A1"), True
+        .UsedRange.Rows.AutoFit: Application.GoTo .Range("A1"), True
     End With
 End Sub
 Private Sub WriteExplanationBlock(ByRef ws As Worksheet, ByRef currentRow As Long, ByVal title As String, ByVal explanation As String, Optional ByVal isHeader As Boolean = False)
@@ -1020,3 +1070,61 @@ Private Sub FastDataCopy(sourceSheet As Worksheet, targetSheet As Worksheet)
     
     On Error GoTo 0
 End Sub
+
+'==========================================================================
+' --- HELPER FUNCTION TO LOAD OVERRIDE DATA ---
+'==========================================================================
+Private Function LoadOverridesDict() As Object
+    Dim wsOverrides As Worksheet
+    Dim overridesDict As Object
+    Dim lastRow As Long, r As Long
+    Dim personName As String, monthStr As String, overrideValue As Double
+    Dim overrideKey As String, monthDate As Date
+
+    Set overridesDict = CreateObject("Scripting.Dictionary")
+    overridesDict.CompareMode = vbTextCompare ' Case-insensitive for names
+
+    On Error Resume Next
+    Set wsOverrides = ThisWorkbook.Sheets("Overrides")
+    On Error GoTo 0
+
+    If wsOverrides Is Nothing Then
+        Debug.Print "INFO: 'Overrides' sheet not found. No overrides will be applied."
+        Set LoadOverridesDict = overridesDict ' Return empty dictionary
+        Exit Function
+    End If
+
+    lastRow = wsOverrides.Cells(wsOverrides.Rows.Count, "A").End(xlUp).row
+
+    If lastRow < 2 Then
+        Debug.Print "INFO: 'Overrides' sheet is empty."
+        Set LoadOverridesDict = overridesDict ' Return empty dictionary
+        Exit Function
+    End If
+
+    ' Read all data into an array for performance
+    Dim dataArr As Variant
+    dataArr = wsOverrides.Range("A2:C" & lastRow).Value
+
+    For r = 1 To UBound(dataArr, 1)
+        personName = Trim(CStr(dataArr(r, 1)))
+        monthStr = Trim(CStr(dataArr(r, 2)))
+
+        ' Validate data before processing
+        If Len(personName) > 0 And Len(monthStr) > 0 And IsNumeric(dataArr(r, 3)) Then
+            On Error Resume Next
+            monthDate = CDate("01-" & Replace(monthStr, "-", " ")) ' Convert yyyy-mmm to a date
+            If Err.Number = 0 Then
+                overrideKey = personName & "|" & Format(monthDate, "yyyy-mm")
+                overrideValue = CDbl(dataArr(r, 3))
+                overridesDict(overrideKey) = overrideValue
+            Else
+                Debug.Print "WARNING: Could not parse month '" & monthStr & "' in Overrides sheet, row " & r + 1
+                Err.Clear
+            End If
+            On Error GoTo 0
+        End If
+    Next r
+
+    Set LoadOverridesDict = overridesDict
+End Function
