@@ -3,6 +3,33 @@
 '==========================================================================
 Option Explicit
 
+' Safely convert mixed-format entry counts (handles commas, stray text, and non-breaking spaces)
+Private Function ParseEntryCount(ByVal rawValue As Variant) As Double
+    Dim cleaned As String, ch As String, i As Long, buffer As String
+    If IsError(rawValue) Then Exit Function
+    If IsNumeric(rawValue) Then
+        ParseEntryCount = CDbl(rawValue)
+        Exit Function
+    End If
+    cleaned = CStr(rawValue)
+    cleaned = Replace(cleaned, Chr$(160), " ")
+    cleaned = Trim$(cleaned)
+    If Len(cleaned) = 0 Then Exit Function
+    cleaned = Replace(cleaned, ",", "")
+    For i = 1 To Len(cleaned)
+        ch = Mid$(cleaned, i, 1)
+        If ch >= "0" And ch <= "9" Then
+            buffer = buffer & ch
+        ElseIf ch = "." Or ch = "-" Then
+            buffer = buffer & ch
+        ElseIf Len(buffer) > 0 Then
+            Exit For
+        End If
+    Next i
+    buffer = Trim$(buffer)
+    If buffer = "" Or buffer = "-" Or buffer = "." Then Exit Function
+    If IsNumeric(buffer) Then ParseEntryCount = CDbl(buffer)
+End Function
 '==========================================================================
 ' --- Process "Personal Entry" Sheet ---
 '==========================================================================
@@ -35,13 +62,13 @@ Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
     ReDim outArr(1 To (lastRow - FIRST_DATA_ROW + 1) * (lastCol - FIRST_TASK_COL + 1), 1 To 7)
     
     Dim outPtr As Long: outPtr = 1
-    Dim i As Long, j As Long, entryCount As Long, taskName As String, region As String, taskOnly As String
+    Dim i As Long, j As Long, entryCount As Double, taskName As String, region As String, taskOnly As String
     Dim aht As Variant, prodHrs As Variant, missingDict As Object: Set missingDict = CreateObject("Scripting.Dictionary")
     Const VALID_REGIONS As String = ",BC,AB,CT,ON,QC,MT,YK,"
     
     For i = FIRST_DATA_ROW To lastRow
         For j = FIRST_TASK_COL To lastCol
-            entryCount = Val(inArr(i, j))
+            entryCount = ParseEntryCount(inArr(i, j))
             If entryCount > 0 Then
                 taskName = inArr(FIRST_TASK_ROW, j)
                 Dim cand As String: cand = Split(taskName, " ")(0)
@@ -193,14 +220,14 @@ Public Sub ProcessActivitySheetOptimized(wsInput As Worksheet, theDate As String
     ReDim outArr(1 To maxPossibleRows, 1 To 7)
     
     Dim outPtr As Long: outPtr = 1
-    Dim i As Long, j As Long, entryCount As Long, taskName As String, region As String, taskOnly As String
+    Dim i As Long, j As Long, entryCount As Double, taskName As String, region As String, taskOnly As String
     Dim aht As Variant, prodHrs As Variant
     Const VALID_REGIONS As String = ",BC,AB,CT,ON,QC,MT,YK,"
     
     ' *** PERFORMANCE: Optimized inner loop with early exits ***
     For i = FIRST_DATA_ROW To lastRow
         For j = FIRST_TASK_COL To lastCol
-            entryCount = Val(inArr(i, j))
+            entryCount = ParseEntryCount(inArr(i, j))
             If entryCount > 0 Then
                 taskName = CStr(inArr(FIRST_TASK_ROW, j))
                 
@@ -247,3 +274,4 @@ Public Sub ProcessActivitySheetOptimized(wsInput As Worksheet, theDate As String
     
     Debug.Print "PERFORMANCE: ProcessActivitySheet completed in " & Format((Timer - startTime), "0.00") & " seconds for " & (outPtr - 1) & " records"
 End Sub
+
