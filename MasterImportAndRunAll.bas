@@ -1161,6 +1161,7 @@ Public Sub RemoveDuplicatesAndRecalculate(Optional ByVal dryRun As Boolean = Fal
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
     Dim key As String, removed As Long
     Dim arr As Variant
+    Dim hadOutputFilter As Boolean, hadOutputNEFilter As Boolean
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
@@ -1310,6 +1311,15 @@ Public Sub RemoveDuplicatesAndRecalculate(Optional ByVal dryRun As Boolean = Fal
                 End If
 
             ' Safety: if header column count differs from colsCount, abort write unless dryRun
+            If Not dryRun Then
+                If wsOut.AutoFilterMode Then
+                    hadOutputFilter = True
+                    On Error Resume Next
+                    If wsOut.FilterMode Then wsOut.ShowAllData
+                    On Error GoTo CleanUp
+                    wsOut.AutoFilterMode = False
+                End If
+            End If
             If headerCols <> colsCount Then
                 Debug.Print "Header columns (", headerCols, ") <> data cols (", colsCount, ") -- aborting write to Output"
                 If Not dryRun Then
@@ -1321,6 +1331,7 @@ Public Sub RemoveDuplicatesAndRecalculate(Optional ByVal dryRun As Boolean = Fal
                 ' Clear old data and write back unique rows
                 wsOut.Range(wsOut.Cells(2, 1), wsOut.Cells(lastRow, lastCol)).ClearContents
                 wsOut.Cells(2, 1).Resize(outPtr, colsCount).Value = writeArr
+                If hadOutputFilter Then wsOut.Range(wsOut.Cells(1, 1), wsOut.Cells(1, headerCols)).AutoFilter
             Else
                 Debug.Print "DryRun: would write ", outPtr, " unique rows to Output"
             End If
@@ -1402,6 +1413,15 @@ SkipOutputWrite:
                 Next j
             Next i
             ' Safety: check header columns
+            If Not dryRun Then
+                If wsOutNE.AutoFilterMode Then
+                    hadOutputNEFilter = True
+                    On Error Resume Next
+                    If wsOutNE.FilterMode Then wsOutNE.ShowAllData
+                    On Error GoTo CleanUp
+                    wsOutNE.AutoFilterMode = False
+                End If
+            End If
             If headerColsNE <> colsCountNE Then
                 Debug.Print "Header columns (", headerColsNE, ") <> data cols (", colsCountNE, ") -- aborting write to OutputNE"
                 If Not dryRun Then
@@ -1412,6 +1432,7 @@ SkipOutputWrite:
             If Not dryRun Then
                 wsOutNE.Range(wsOutNE.Cells(2, 1), wsOutNE.Cells(lastRow, lastCol)).ClearContents
                 wsOutNE.Cells(2, 1).Resize(outPtr, colsCountNE).Value = writeArrNE
+                If hadOutputNEFilter Then wsOutNE.Range(wsOutNE.Cells(1, 1), wsOutNE.Cells(1, headerColsNE)).AutoFilter
             Else
                 Debug.Print "DryRun: would write ", outPtr, " unique rows to OutputNE"
             End If
@@ -1497,6 +1518,7 @@ Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As D
     Dim ts As String, outBackupName As String, outNEBackupName As String
     Dim d As Date, i As Long
     Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
+    Dim hadOutputFilter As Boolean, hadOutputNEFilter As Boolean
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
@@ -1612,6 +1634,13 @@ Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As D
                 GoTo SkipOutputProcessing
             End If
 
+            If wsOut.AutoFilterMode Then
+                hadOutputFilter = True
+                On Error Resume Next
+                If wsOut.FilterMode Then wsOut.ShowAllData
+                On Error GoTo 0
+                wsOut.AutoFilterMode = False
+            End If
             arr = wsOut.Range("A2", wsOut.Cells(lastRow, dataLastCol)).Value
             Dim arrRows As Long, arrCols As Long
             arrRows = IIf(IsArray(arr), UBound(arr, 1), 0)
@@ -1650,6 +1679,7 @@ Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As D
                 For i = 1 To keepPtr: For c = 1 To arrCols: writeArr(i, c) = keepArr(i, c): Next c: Next i
                 wsOut.Cells(2, 1).Resize(keepPtr, arrCols).Value = writeArr
             End If
+            If hadOutputFilter Then wsOut.Range(wsOut.Cells(1, 1), wsOut.Cells(1, dataLastCol)).AutoFilter
         End If
     End If
 SkipOutputProcessing:
@@ -1665,6 +1695,13 @@ SkipOutputProcessing:
                 GoTo SkipOutputNEProcessing
             End If
 
+            If wsOutNE.AutoFilterMode Then
+                hadOutputNEFilter = True
+                On Error Resume Next
+                If wsOutNE.FilterMode Then wsOutNE.ShowAllData
+                On Error GoTo 0
+                wsOutNE.AutoFilterMode = False
+            End If
             arr = wsOutNE.Range("A2", wsOutNE.Cells(lastRow, dataLastColNE)).Value
             Dim arrRowsNE As Long, arrColsNE As Long
             arrRowsNE = IIf(IsArray(arr), UBound(arr, 1), 0)
@@ -1701,30 +1738,36 @@ SkipOutputProcessing:
                 For i = 1 To keepPtr: For c = 1 To arrColsNE: writeArr(i, c) = keepArr(i, c): Next c: Next i
                 wsOutNE.Cells(2, 1).Resize(keepPtr, arrColsNE).Value = writeArr
             End If
+            If hadOutputNEFilter Then wsOutNE.Range(wsOutNE.Cells(1, 1), wsOutNE.Cells(1, dataLastColNE)).AutoFilter
         End If
     End If
 SkipOutputNEProcessing:
 
     ' Reprocess dated sheets in range
     For Each localSheet In ThisWorkbook.Worksheets
-        If localSheet.Name Like "Personal Entry *" And localSheet.Name <> "Personal Entry" Then
-            parsedDate = ParseDateFromName(localSheet.Name, "Personal Entry ")
-            If parsedDate <> "" Then
-                sheetDate = CDate(parsedDate)
-                If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessActivitySheet(localSheet, parsedDate)
+        If (sheetChoice = "Both" Or sheetChoice = "Output") Then
+            If localSheet.Name Like "Personal Entry *" And localSheet.Name <> "Personal Entry" Then
+                parsedDate = ParseDateFromName(localSheet.Name, "Personal Entry ")
+                If parsedDate <> "" Then
+                    sheetDate = CDate(parsedDate)
+                    If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessActivitySheet(localSheet, parsedDate)
+                End If
             End If
-        ElseIf localSheet.Name Like "Non-Entry Hrs *" And localSheet.Name <> "Non-Entry Hrs" Then
-            parsedDate = ParseDateFromName(localSheet.Name, "Non-Entry Hrs ")
-            If parsedDate <> "" Then
-                sheetDate = CDate(parsedDate)
-                If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessNonEntrySheet(localSheet, parsedDate)
+        End If
+        If (sheetChoice = "Both" Or sheetChoice = "OutputNE") Then
+            If localSheet.Name Like "Non-Entry Hrs *" And localSheet.Name <> "Non-Entry Hrs" Then
+                parsedDate = ParseDateFromName(localSheet.Name, "Non-Entry Hrs ")
+                If parsedDate <> "" Then
+                    sheetDate = CDate(parsedDate)
+                    If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessNonEntrySheet(localSheet, parsedDate)
+                End If
             End If
         End If
     Next localSheet
 
     ' Sort and recalc
-    Call SortSheetByDate(wsOut, 1)
-    Call SortSheetByDate(wsOutNE, 1)
+    If sheetChoice = "Both" Or sheetChoice = "Output" Then Call SortSheetByDate(wsOut, 1)
+    If sheetChoice = "Both" Or sheetChoice = "OutputNE" Then Call SortSheetByDate(wsOutNE, 1)
 
     ' Prepare array of dates that were rebuilt so metrics can process only those dates
     Dim rebuiltDatesArr() As Date
