@@ -2,6 +2,7 @@
 ' --- MAIN MODULE (CONTROL FLOW & REPORTING) ---
 ' =========================================================================
 Option Explicit
+Public SkipReprocessDuringMetrics As Boolean
 
 '==========================================================================
 ' --- MASTER SUBROUTINE (with Performance Optimizations) ---
@@ -89,7 +90,7 @@ End Sub
 '==========================================================================
 ' --- HELPER FUNCTION TO IMPORT DATA (Works with Hidden Sheets) ---
 '==========================================================================
-Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
+Private Function ImportDataForDate(ByVal processDate As Date, Optional ByVal sheetChoice As String = "Both") As Boolean
     Dim sourceURL As String, sourceWB As Workbook, targetWB As Workbook
     Dim processDateStr As String
     Dim ws As Worksheet, parsedDateStr As String
@@ -149,6 +150,8 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Dim nonEntrySheetName As String: nonEntrySheetName = sourceNonEntry.name
     
     ' -- Handle Personal Entry Sheet --
+    ' Only import Personal Entry if requested
+    If (sheetChoice = "Both" Or sheetChoice = "Output") Then
     On Error Resume Next
     Set targetPersonal = targetWB.Sheets(personalSheetName)
     On Error GoTo 0
@@ -160,8 +163,11 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     Else
         targetPersonal.Range("C3", targetPersonal.UsedRange.SpecialCells(xlCellTypeLastCell)).ClearContents
     End If
+    End If
     
     ' -- Handle Non-Entry Sheet --
+    ' Only import Non-Entry if requested
+    If (sheetChoice = "Both" Or sheetChoice = "OutputNE") Then
     On Error Resume Next
     Set targetNonEntry = targetWB.Sheets(nonEntrySheetName)
     On Error GoTo 0
@@ -172,6 +178,7 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
         targetNonEntry.name = nonEntrySheetName
     Else
         targetNonEntry.Range("D2", targetNonEntry.UsedRange.SpecialCells(xlCellTypeLastCell)).ClearContents
+    End If
     End If
 
     ' --- 4. Copy Data via "Clean and Paste" Method ---
@@ -186,7 +193,7 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
     ' *** NEW: Find the last column based on the headers in your LOCAL TEMPLATE ***
     lastDataColPE = templatePersonal.Cells(2, templatePersonal.Columns.Count).End(xlToLeft).Column
     
-    If lastDataRowPE >= 3 And lastDataColPE >= 3 Then ' Ensure there is data to copy
+    If (sheetChoice = "Both" Or sheetChoice = "Output") And lastDataRowPE >= 3 And lastDataColPE >= 3 And Not sourcePersonal Is Nothing Then ' Ensure there is data to copy and source exists
         ' Define the source data range using the dimensions we found
         Dim sourceDataRangePE As Range
         Set sourceDataRangePE = sourcePersonal.Range(sourcePersonal.Cells(3, 3), sourcePersonal.Cells(lastDataRowPE, lastDataColPE))
@@ -201,22 +208,30 @@ Private Function ImportDataForDate(ByVal processDate As Date) As Boolean
             Next c
         Next r
         
-        ' Step 3: Paste from memory
-        targetPersonal.Range("C3").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
+        ' Step 3: Paste from memory (guard target exists)
+        If Not targetPersonal Is Nothing Then
+            targetPersonal.Range("C3").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
+        Else
+            Debug.Print "Skipping paste to Personal target because targetPersonal is Nothing for date " & processDateStr
+        End If
     End If
     
     ' -- For Non-Entry Hrs --
     Dim lastDataRowNE As Long, lastDataColNE As Long
     lastDataRowNE = sourceNonEntry.Cells(sourceNonEntry.Rows.Count, "A").End(xlUp).row
     lastDataColNE = sourceNonEntry.Cells(1, sourceNonEntry.Columns.Count).End(xlToLeft).Column
-    If lastDataRowNE >= 2 And lastDataColNE >= 4 Then
+    If (sheetChoice = "Both" Or sheetChoice = "OutputNE") And lastDataRowNE >= 2 And lastDataColNE >= 4 And Not sourceNonEntry Is Nothing Then
         dataArray = sourceNonEntry.Range(sourceNonEntry.Cells(2, 4), sourceNonEntry.Cells(lastDataRowNE, lastDataColNE)).Value2
         For r = 1 To UBound(dataArray, 1)
             For c = 1 To UBound(dataArray, 2)
                 If IsError(dataArray(r, c)) Then dataArray(r, c) = ""
             Next c
         Next r
-        targetNonEntry.Range("D2").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
+        If Not targetNonEntry Is Nothing Then
+            targetNonEntry.Range("D2").Resize(UBound(dataArray, 1), UBound(dataArray, 2)).Value = dataArray
+        Else
+            Debug.Print "Skipping paste to Non-Entry target because targetNonEntry is Nothing for date " & processDateStr
+        End If
     End If
     
 CleanUpAndExit_Success:
@@ -314,54 +329,61 @@ Private Sub CalculateProductivityMetrics(ByVal startTime As Double, Optional ByR
     Application.StatusBar = "Step 3: Rebuilding Output sheets from all dated sources for the year..."
     Set wsOutput = ThisWorkbook.Sheets("Output")
     Set wsOutputNE = ThisWorkbook.Sheets("OutputNE")
-    If Not IsEmpty(datesToProcess) And dateCount > 0 Then
-        ' Only process/append for the provided dates
-        Dim processDatesDict As Object
-        Set processDatesDict = CreateObject("Scripting.Dictionary")
-        Dim i As Long
-        For i = 0 To dateCount - 1
-            processDatesDict(Format(datesToProcess(i), "yyyy-mm-dd")) = 1
-        Next i
-        ' Do NOT clear the output sheets, just append/update for these dates
-    Else
-        wsOutput.Cells.Clear
-        wsOutputNE.Cells.Clear
-    End If
-    Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
-    Dim reportStartDate: reportStartDate = DateSerial(2024, 1, 1)
-    For Each localSheet In ThisWorkbook.Worksheets
-        If localSheet.name Like "Personal Entry *" Then
-            If localSheet.name <> "Personal Entry" Then
-                parsedDate = ParseDateFromName(localSheet.name, "Personal Entry ")
-                If parsedDate <> "" Then
-                    sheetDate = CDate(parsedDate)
-                    If sheetDate >= reportStartDate Then
-                        If (IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
-                            Call ProcessActivitySheet(localSheet, parsedDate)
-                        End If
-                    End If
-                End If
-            End If
-        ElseIf localSheet.name Like "Non-Entry Hrs *" Then
-            If localSheet.name <> "Non-Entry Hrs" Then
-                parsedDate = ParseDateFromName(localSheet.name, "Non-Entry Hrs ")
-                If parsedDate <> "" Then
-                    sheetDate = CDate(parsedDate)
-                    If sheetDate >= reportStartDate Then
-                        If (IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
-                            Call ProcessNonEntrySheet(localSheet, parsedDate)
-                        End If
-                    End If
-                End If
-            End If
+
+    ' If a global flag requests skipping reprocessing, don't rebuild dated sheets here
+    If Not SkipReprocessDuringMetrics Then
+        If Not IsEmpty(datesToProcess) And dateCount > 0 Then
+            ' Only process/append for the provided dates
+            Dim processDatesDict As Object
+            Set processDatesDict = CreateObject("Scripting.Dictionary")
+            Dim i As Long
+            For i = 0 To dateCount - 1
+                processDatesDict(Format(datesToProcess(i), "yyyy-mm-dd")) = 1
+            Next i
+            ' Do NOT clear the output sheets, just append/update for these dates
+        Else
+            wsOutput.Cells.Clear
+            wsOutputNE.Cells.Clear
         End If
-    Next localSheet
+        Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
+        Dim reportStartDate: reportStartDate = DateSerial(2024, 1, 1)
+        For Each localSheet In ThisWorkbook.Worksheets
+            If localSheet.name Like "Personal Entry *" Then
+                If localSheet.name <> "Personal Entry" Then
+                    parsedDate = ParseDateFromName(localSheet.name, "Personal Entry ")
+                    If parsedDate <> "" Then
+                        sheetDate = CDate(parsedDate)
+                        If sheetDate >= reportStartDate Then
+                            If (IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
+                                Call ProcessActivitySheet(localSheet, parsedDate)
+                            End If
+                        End If
+                    End If
+                End If
+            ElseIf localSheet.name Like "Non-Entry Hrs *" Then
+                If localSheet.name <> "Non-Entry Hrs" Then
+                    parsedDate = ParseDateFromName(localSheet.name, "Non-Entry Hrs ")
+                    If parsedDate <> "" Then
+                        sheetDate = CDate(parsedDate)
+                        If sheetDate >= reportStartDate Then
+                            If (IsEmpty(datesToProcess) Or dateCount = 0) Or processDatesDict.Exists(parsedDate) Then
+                                Call ProcessNonEntrySheet(localSheet, parsedDate)
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        Next localSheet
+    Else
+        ' Skipping reprocessing of dated sheets because SkipReprocessDuringMetrics is True
+    End If
 
     '--- STEP 3: READ & AGGREGATE ALL DATA FROM THE NEWLY BUILT OUTPUT SHEETS ---
     Application.StatusBar = "Step 4: Aggregating all processed data..."
     lastRowOutput = wsOutput.Cells(wsOutput.Rows.Count, "A").End(xlUp).row
     lastRowOutputNE = wsOutputNE.Cells(wsOutputNE.Rows.Count, "A").End(xlUp).row
     If lastRowOutput <= 1 And lastRowOutputNE <= 1 Then GoTo NoDataToProcess
+
     
     If lastRowOutput > 1 Then arrOutput = wsOutput.Range("A2:G" & lastRowOutput).Value
     If lastRowOutputNE > 1 Then arrOutputNE = wsOutputNE.Range("A2:D" & lastRowOutputNE).Value
@@ -1128,3 +1150,687 @@ Private Function LoadOverridesDict() As Object
 
     Set LoadOverridesDict = overridesDict
 End Function
+
+'==========================================================================
+'--- UTILITY: Remove exact duplicate rows from Output sheets and rerun reports
+'==========================================================================
+Public Sub RemoveDuplicatesAndRecalculate(Optional ByVal dryRun As Boolean = False)
+    Dim wsOut As Worksheet, wsOutNE As Worksheet
+    Dim lastRow As Long, lastCol As Long
+    Dim dataRange As Range, r As Long
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    Dim key As String, removed As Long
+    Dim arr As Variant
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    Application.StatusBar = "Removing exact duplicate rows from Output sheets..."
+
+    On Error GoTo CleanUp
+
+    ' Create a full workbook copy backup before modifying (safer for recovery)
+    Call SaveWorkbookBackup
+    ' Create timestamped backups of the sheets before modifying
+    Dim ts As String: ts = Format(Now, "yyyyMMdd_HHmmss")
+    On Error Resume Next
+    ThisWorkbook.Sheets("Output").Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count).Name = "Output_backup_" & ts
+    ThisWorkbook.Sheets("OutputNE").Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count).Name = "OutputNE_backup_" & ts
+    On Error GoTo CleanUp
+
+    ' Process Output (Productive) sheet
+    Set wsOut = ThisWorkbook.Sheets("Output")
+    ' Prepare per-run dedupe audit sheet
+    Dim dedupeAudit As Worksheet, dedupeName As String, dedupeRow As Long
+    dedupeName = "Dedupe_Audit_" & ts
+    On Error Resume Next
+    Set dedupeAudit = ThisWorkbook.Sheets(dedupeName)
+    If dedupeAudit Is Nothing Then
+        Set dedupeAudit = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        dedupeAudit.Name = dedupeName
+    End If
+    On Error GoTo CleanUp
+    lastRow = wsOut.Cells(wsOut.Rows.Count, "A").End(xlUp).Row
+    If lastRow > 1 Then
+        lastCol = wsOut.Cells(1, wsOut.Columns.Count).End(xlToLeft).Column
+        Set dataRange = wsOut.Range(wsOut.Cells(2, 1), wsOut.Cells(lastRow, lastCol))
+        arr = dataRange.Value
+        ' Validate header columns vs data columns
+        Dim headerCols As Long: headerCols = wsOut.Cells(1, wsOut.Columns.Count).End(xlToLeft).Column
+        ' Initialize dedupe audit header (Source, OriginalRow, RemovedAt, then columns)
+        If dedupeAudit.Cells(1, 1).Value = "" Then
+            dedupeAudit.Cells(1, 1).Value = "Source": dedupeAudit.Cells(1, 2).Value = "OriginalRow": dedupeAudit.Cells(1, 3).Value = "RemovedAt"
+            dedupeAudit.Cells(1, 4).Resize(1, headerCols).Value = wsOut.Range(wsOut.Cells(1, 1), wsOut.Cells(1, headerCols)).Value
+        End If
+        dict.RemoveAll
+        removed = 0
+        ' Build a new array of unique rows
+        Dim outArr() As Variant
+        Dim outPtr As Long: outPtr = 0
+        Dim i As Long, j As Long
+        Dim rowsCount As Long, colsCount As Long
+        rowsCount = UBound(arr, 1): colsCount = UBound(arr, 2)
+
+        ' Allocate a working buffer the same size as the input (no Preserve on first dimension)
+        ReDim outArr(1 To rowsCount, 1 To colsCount)
+
+        Dim cellVal As Variant, norm As String
+        For i = 1 To rowsCount
+            key = ""
+            ' Build key using Date(1), Name(2), Region(3), Task(4), Count(5) only
+            Dim colIdxsOut As Variant: colIdxsOut = Array(1, 2, 3, 4, 5)
+            For j = LBound(colIdxsOut) To UBound(colIdxsOut)
+                Dim cj As Long: cj = colIdxsOut(j)
+                If cj <= colsCount Then
+                    cellVal = arr(i, cj)
+                Else
+                    cellVal = ""
+                End If
+                If IsError(cellVal) Then
+                    norm = "#ERR"
+                ElseIf IsDate(cellVal) Then
+                    norm = Format(CDate(cellVal), "yyyy-mm-dd")
+                ElseIf IsNumeric(cellVal) Then
+                    norm = Trim(CStr(cellVal))
+                ElseIf IsNull(cellVal) Then
+                    norm = ""
+                Else
+                    norm = Trim(CStr(cellVal))
+                    norm = Replace(norm, vbTab, " ")
+                    Do While InStr(norm, "  ") > 0
+                        norm = Replace(norm, "  ", " ")
+                    Loop
+                End If
+                key = key & "|" & norm
+            Next j
+            If Not dict.Exists(key) Then
+                dict(key) = 1
+                outPtr = outPtr + 1
+                For j = 1 To colsCount
+                    outArr(outPtr, j) = arr(i, j)
+                Next j
+            Else
+                removed = removed + 1
+                If removed <= 5 Then Debug.Print "Duplicate detected (Output) row ", i, " key=", Left(key, 200)
+                ' Log removed row into dedupe audit
+                On Error Resume Next
+                dedupeRow = dedupeAudit.Cells(dedupeAudit.Rows.Count, "A").End(xlUp).Row + 1
+                dedupeAudit.Cells(dedupeRow, 1).Value = "Output"
+                dedupeAudit.Cells(dedupeRow, 2).Value = i + 1
+                dedupeAudit.Cells(dedupeRow, 3).Value = Now
+                For j = 1 To colsCount: dedupeAudit.Cells(dedupeRow, 3 + j).Value = arr(i, j): Next j
+                On Error GoTo CleanUp
+            End If
+        Next i
+
+    If outPtr > 0 Then
+            ' Copy used portion into a correctly sized array for writing
+            Dim writeArr() As Variant
+            ReDim writeArr(1 To outPtr, 1 To colsCount)
+            For i = 1 To outPtr
+                For j = 1 To colsCount
+                    writeArr(i, j) = outArr(i, j)
+                Next j
+            Next i
+
+                ' --- Sanity checks: ensure dates in writeArr are consistent with original data ---
+                Dim dateCounts As Object: Set dateCounts = CreateObject("Scripting.Dictionary")
+                Dim origDateCounts As Object: Set origDateCounts = CreateObject("Scripting.Dictionary")
+                Dim dVal As Variant, dKey As String
+                For i = 1 To outPtr
+                    dVal = writeArr(i, 1)
+                    If IsDate(dVal) Then dKey = Format(CDate(dVal), "yyyy-mm-dd") Else dKey = CStr(dVal)
+                    If dateCounts.Exists(dKey) Then dateCounts(dKey) = dateCounts(dKey) + 1 Else dateCounts(dKey) = 1
+                Next i
+                For i = 1 To rowsCount
+                    dVal = arr(i, 1)
+                    If IsDate(dVal) Then dKey = Format(CDate(dVal), "yyyy-mm-dd") Else dKey = CStr(dVal)
+                    If origDateCounts.Exists(dKey) Then origDateCounts(dKey) = origDateCounts(dKey) + 1 Else origDateCounts(dKey) = 1
+                Next i
+
+                ' If writeArr contains a single repeated date for many rows, abort
+                If dateCounts.Count = 1 And outPtr > 10 Then
+                    Debug.Print "Sanity abort: writeArr contains a single date (" & dateCounts.Keys()(0) & ") for " & outPtr & " rows"
+                    If Not dryRun Then MsgBox "Dedupe aborted: resulting data contains a single date for all rows (" & dateCounts.Keys()(0) & "). Please run a dry-run to inspect.", vbExclamation
+                    GoTo SkipOutputWrite
+                End If
+
+                ' If writeArr contains dates not present in the original data, abort
+                Dim diffCount As Long: diffCount = 0
+                Dim k As Variant
+                For Each k In dateCounts.Keys
+                    If Not origDateCounts.Exists(k) Then diffCount = diffCount + dateCounts(k)
+                Next k
+                If diffCount > 0 Then
+                    Debug.Print "Sanity abort: writeArr contains " & diffCount & " rows with dates not present in original data"
+                    If Not dryRun Then MsgBox "Dedupe aborted: result contains dates not present in original data. Please run a dry-run to inspect.", vbExclamation
+                    GoTo SkipOutputWrite
+                End If
+
+            ' Safety: if header column count differs from colsCount, abort write unless dryRun
+            If headerCols <> colsCount Then
+                Debug.Print "Header columns (", headerCols, ") <> data cols (", colsCount, ") -- aborting write to Output"
+                If Not dryRun Then
+                    MsgBox "Header columns do not match data width. Aborting write to Output to avoid corruption.", vbExclamation
+                    GoTo SkipOutputWrite
+                End If
+            End If
+            If Not dryRun Then
+                ' Clear old data and write back unique rows
+                wsOut.Range(wsOut.Cells(2, 1), wsOut.Cells(lastRow, lastCol)).ClearContents
+                wsOut.Cells(2, 1).Resize(outPtr, colsCount).Value = writeArr
+            Else
+                Debug.Print "DryRun: would write ", outPtr, " unique rows to Output"
+            End If
+SkipOutputWrite:
+        End If
+        Debug.Print "Removed " & removed & " duplicate rows from Output"
+    End If
+
+    ' Process OutputNE (Non-Entry) sheet
+    Set wsOutNE = ThisWorkbook.Sheets("OutputNE")
+    lastRow = wsOutNE.Cells(wsOutNE.Rows.Count, "A").End(xlUp).Row
+    If lastRow > 1 Then
+        lastCol = wsOutNE.Cells(1, wsOutNE.Columns.Count).End(xlToLeft).Column
+        Set dataRange = wsOutNE.Range(wsOutNE.Cells(2, 1), wsOutNE.Cells(lastRow, lastCol))
+        arr = dataRange.Value
+        dict.RemoveAll
+        removed = 0
+        Dim outArrNE() As Variant
+        outPtr = 0
+        Dim rowsCountNE As Long, colsCountNE As Long
+        rowsCountNE = UBound(arr, 1): colsCountNE = UBound(arr, 2)
+    ReDim outArrNE(1 To rowsCountNE, 1 To colsCountNE)
+    Dim headerColsNE As Long: headerColsNE = wsOutNE.Cells(1, wsOutNE.Columns.Count).End(xlToLeft).Column
+        Dim normNE As String, cellValNE As Variant
+        For i = 1 To rowsCountNE
+            key = ""
+            ' Build key using Date(1), Name(2), Task(3), Count(4)
+            Dim colIdxsNE As Variant: colIdxsNE = Array(1, 2, 3, 4)
+            For j = LBound(colIdxsNE) To UBound(colIdxsNE)
+                Dim cjNE As Long: cjNE = colIdxsNE(j)
+                If cjNE <= colsCountNE Then
+                    cellValNE = arr(i, cjNE)
+                Else
+                    cellValNE = ""
+                End If
+                If IsError(cellValNE) Then
+                    normNE = "#ERR"
+                ElseIf IsDate(cellValNE) Then
+                    normNE = Format(CDate(cellValNE), "yyyy-mm-dd")
+                ElseIf IsNumeric(cellValNE) Then
+                    normNE = Trim(CStr(cellValNE))
+                ElseIf IsNull(cellValNE) Then
+                    normNE = ""
+                Else
+                    normNE = Trim(CStr(cellValNE))
+                    normNE = Replace(normNE, vbTab, " ")
+                    Do While InStr(normNE, "  ") > 0
+                        normNE = Replace(normNE, "  ", " ")
+                    Loop
+                End If
+                key = key & "|" & normNE
+            Next j
+            If Not dict.Exists(key) Then
+                dict(key) = 1
+                outPtr = outPtr + 1
+                For j = 1 To colsCountNE
+                    outArrNE(outPtr, j) = arr(i, j)
+                Next j
+            Else
+                removed = removed + 1
+                If removed <= 5 Then Debug.Print "Duplicate detected (OutputNE) row ", i, " key=", Left(key, 200)
+                ' Log removed row into dedupe audit
+                On Error Resume Next
+                dedupeRow = dedupeAudit.Cells(dedupeAudit.Rows.Count, "A").End(xlUp).Row + 1
+                dedupeAudit.Cells(dedupeRow, 1).Value = "OutputNE"
+                dedupeAudit.Cells(dedupeRow, 2).Value = i + 1
+                dedupeAudit.Cells(dedupeRow, 3).Value = Now
+                For j = 1 To colsCountNE: dedupeAudit.Cells(dedupeRow, 3 + j).Value = arr(i, j): Next j
+                On Error GoTo CleanUp
+            End If
+        Next i
+
+    If outPtr > 0 Then
+            Dim writeArrNE() As Variant
+            ReDim writeArrNE(1 To outPtr, 1 To colsCountNE)
+            For i = 1 To outPtr
+                For j = 1 To colsCountNE
+                    writeArrNE(i, j) = outArrNE(i, j)
+                Next j
+            Next i
+            ' Safety: check header columns
+            If headerColsNE <> colsCountNE Then
+                Debug.Print "Header columns (", headerColsNE, ") <> data cols (", colsCountNE, ") -- aborting write to OutputNE"
+                If Not dryRun Then
+                    MsgBox "Header columns do not match data width. Aborting write to OutputNE to avoid corruption.", vbExclamation
+                    GoTo SkipOutputNEWrite
+                End If
+            End If
+            If Not dryRun Then
+                wsOutNE.Range(wsOutNE.Cells(2, 1), wsOutNE.Cells(lastRow, lastCol)).ClearContents
+                wsOutNE.Cells(2, 1).Resize(outPtr, colsCountNE).Value = writeArrNE
+            Else
+                Debug.Print "DryRun: would write ", outPtr, " unique rows to OutputNE"
+            End If
+SkipOutputNEWrite:
+        End If
+        Debug.Print "Removed " & removed & " duplicate rows from OutputNE"
+    End If
+
+    ' Re-run the metrics calculation (preserve existing Output/OutputNE AHT values)
+    Application.StatusBar = "Recalculating productivity metrics (preserving existing Output data)..."
+    Dim preserveDates() As Date
+    ReDim preserveDates(0)
+    preserveDates(0) = Date ' non-empty array prevents the routine from clearing Output/OutputNE
+    Call CalculateProductivityMetrics(Timer, preserveDates, 1)
+
+CleanUp:
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    If Err.Number <> 0 Then Debug.Print "Error in RemoveDuplicatesAndRecalculate (" & Err.Number & "): " & Err.Description
+End Sub
+
+' Restore most recent backups for Output and OutputNE (looks for sheets named Output_backup_YYYYMMDD_HHMMSS)
+Public Sub RestoreLastBackups()
+    Dim ws As Worksheet, foundOut As Worksheet, foundNE As Worksheet
+    Dim s As String, bestOut As String, bestNE As String
+    Dim bestDTOut As Date, bestDTNE As Date
+    bestOut = "": bestNE = ""
+    For Each ws In ThisWorkbook.Worksheets
+        s = ws.Name
+        If LCase(Left(s, 13)) = "output_backup_" Then
+            On Error Resume Next
+            Dim dt As Date: dt = CDate(Mid(s, 14, 4) & "-" & Mid(s, 18, 2) & "-" & Mid(s, 20, 2) & " " & Mid(s, 23, 2) & ":" & Mid(s, 25, 2) & ":" & Mid(s, 27, 2))
+            If Err.Number = 0 Then
+                If bestOut = "" Or dt > bestDTOut Then bestOut = s: bestDTOut = dt
+            End If
+            On Error GoTo 0
+        ElseIf LCase(Left(s, 16)) = "outputne_backup_" Then
+            On Error Resume Next
+            Dim dt2 As Date: dt2 = CDate(Mid(s, 17, 4) & "-" & Mid(s, 21, 2) & "-" & Mid(s, 23, 2) & " " & Mid(s, 26, 2) & ":" & Mid(s, 28, 2) & ":" & Mid(s, 30, 2))
+            If Err.Number = 0 Then
+                If bestNE = "" Or dt2 > bestDTNE Then bestNE = s: bestDTNE = dt2
+            End If
+            On Error GoTo 0
+        End If
+    Next ws
+
+    If bestOut <> "" Then
+        ThisWorkbook.Sheets(bestOut).Cells.Copy
+        ThisWorkbook.Sheets("Output").Cells.Clear
+        ThisWorkbook.Sheets("Output").Cells(1, 1).PasteSpecial xlPasteValues
+    End If
+    If bestNE <> "" Then
+        ThisWorkbook.Sheets(bestNE).Cells.Copy
+        ThisWorkbook.Sheets("OutputNE").Cells.Clear
+        ThisWorkbook.Sheets("OutputNE").Cells(1, 1).PasteSpecial xlPasteValues
+    End If
+    Application.CutCopyMode = False
+    MsgBox "Restore complete (if backup sheets were found).", vbInformation
+End Sub
+
+' --- Macro wrappers for Alt+F8 visibility
+Public Sub RemoveDuplicatesAndRecalculate_Run()
+    ' Actual run (will create backups and write changes)
+    Call RemoveDuplicatesAndRecalculate(False)
+End Sub
+
+Public Sub RemoveDuplicatesAndRecalculate_DryRun()
+    ' Preview only; does not modify sheets
+    Call RemoveDuplicatesAndRecalculate(True)
+End Sub
+
+'==========================================================================
+'--- Rebuild Output/OutputNE for a date or date range (with optional import)
+'--- Usage: Call RebuildOutputForDateRange(CDate("2025-09-01"), CDate("2025-09-03"), True)
+'==========================================================================
+Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As Date, Optional ByVal importFromSource As Boolean = False, Optional ByVal sheetChoice As String = "Both")
+    Dim wsOut As Worksheet, wsOutNE As Worksheet, wsAudit As Worksheet
+    Dim lastRow As Long, r As Long, c As Long
+    Dim arr As Variant, writeArr As Variant
+    Dim keepArr() As Variant, keepPtr As Long
+    Dim ts As String, outBackupName As String, outNEBackupName As String
+    Dim d As Date, i As Long
+    Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    Application.StatusBar = "Rebuilding Output sheets for date range..."
+
+    Set wsOut = ThisWorkbook.Sheets("Output")
+    Set wsOutNE = ThisWorkbook.Sheets("OutputNE")
+
+    ts = Format(Now, "yyyymmdd_HHMMSS")
+    outBackupName = "Output_backup_" & ts
+    outNEBackupName = "OutputNE_backup_" & ts
+
+    On Error Resume Next
+    If sheetChoice = "Both" Or sheetChoice = "Output" Then
+        ThisWorkbook.Sheets("Output").Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+        ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count).Name = outBackupName
+        If Err.Number <> 0 Then Err.Clear
+    End If
+    If sheetChoice = "Both" Or sheetChoice = "OutputNE" Then
+        ThisWorkbook.Sheets("OutputNE").Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+        ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count).Name = outNEBackupName
+        If Err.Number <> 0 Then Err.Clear
+    End If
+    On Error GoTo 0
+
+    Set wsAudit = Nothing
+    On Error Resume Next
+    Set wsAudit = ThisWorkbook.Sheets("Rebuild_Audit")
+    On Error GoTo 0
+    If wsAudit Is Nothing Then
+        Set wsAudit = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsAudit.Name = "Rebuild_Audit"
+    End If
+
+    If wsAudit.Cells(1, 1).Value = "" Then
+        Dim headerCols As Long
+        headerCols = wsOut.Cells(1, wsOut.Columns.Count).End(xlToLeft).Column
+        wsAudit.Cells(1, 1).Value = "Source": wsAudit.Cells(1, 2).Value = "OriginalRow": wsAudit.Cells(1, 3).Value = "RemovedAt"
+        wsAudit.Cells(1, 4).Resize(1, headerCols).Value = wsOut.Range(wsOut.Cells(1, 1), wsOut.Cells(1, headerCols)).Value
+    End If
+
+    ' Optional import from source
+    If importFromSource Then
+        For d = startDate To endDate
+            If Weekday(d, vbMonday) < 6 Then ImportDataForDate d, sheetChoice
+        Next d
+    End If
+
+    ' --- Build list of dates that WILL be rebuilt (either from import or existing dated sheets) ---
+    Dim rebuildDates As Object: Set rebuildDates = CreateObject("Scripting.Dictionary")
+    Dim keyDate As String
+    If importFromSource Then
+        For d = startDate To endDate
+            If Weekday(d, vbMonday) < 6 Then rebuildDates(Format(d, "yyyy-mm-dd")) = 1
+        Next d
+    Else
+        ' Scan workbook for dated sheets inside the range
+        For Each localSheet In ThisWorkbook.Worksheets
+            If localSheet.Name Like "Personal Entry *" And localSheet.Name <> "Personal Entry" Then
+                parsedDate = ParseDateFromName(localSheet.Name, "Personal Entry ")
+                If parsedDate <> "" Then
+                    sheetDate = CDate(parsedDate)
+                    If sheetDate >= startDate And sheetDate <= endDate Then rebuildDates(Format(sheetDate, "yyyy-mm-dd")) = 1
+                End If
+            ElseIf localSheet.Name Like "Non-Entry Hrs *" And localSheet.Name <> "Non-Entry Hrs" Then
+                parsedDate = ParseDateFromName(localSheet.Name, "Non-Entry Hrs ")
+                If parsedDate <> "" Then
+                    sheetDate = CDate(parsedDate)
+                    If sheetDate >= startDate And sheetDate <= endDate Then rebuildDates(Format(sheetDate, "yyyy-mm-dd")) = 1
+                End If
+            End If
+        Next localSheet
+    End If
+
+    If rebuildDates.Count = 0 Then
+        MsgBox "No dated sheets found in the workbook for that range and import is not selected. Nothing will be rebuilt.", vbInformation, "Nothing to Rebuild"
+        Application.StatusBar = False
+        Application.ScreenUpdating = True
+        Application.Calculation = xlCalculationAutomatic
+        Application.EnableEvents = True
+        Exit Sub
+    End If
+
+    ' Confirm which dates will be rebuilt
+    Dim sampleList As String: sampleList = ""
+    Dim k As Variant, cnt As Long: cnt = 0
+    For Each k In rebuildDates.Keys
+        cnt = cnt + 1
+        If cnt <= 12 Then
+            If sampleList <> "" Then sampleList = sampleList & ", "
+            sampleList = sampleList & k
+        End If
+    Next k
+    If rebuildDates.Count > 12 Then sampleList = sampleList & ", ... (" & rebuildDates.Count & " total)"
+    If MsgBox("This operation will remove rows for the following dates and rebuild them:" & vbNewLine & sampleList & vbNewLine & vbNewLine & "Proceed?", vbOKCancel + vbExclamation, "Confirm Rebuild Dates") <> vbOK Then
+        Application.StatusBar = False
+        Application.ScreenUpdating = True
+        Application.Calculation = xlCalculationAutomatic
+        Application.EnableEvents = True
+        Exit Sub
+    End If
+
+    ' Process Output
+    If sheetChoice = "Both" Or sheetChoice = "Output" Then
+        lastRow = wsOut.Cells(wsOut.Rows.Count, "A").End(xlUp).Row
+        If lastRow > 1 Then
+            Dim dataLastCol As Long
+            dataLastCol = wsOut.Cells(1, wsOut.Columns.Count).End(xlToLeft).Column
+            ' Safety: detect merged header cells which can break range math
+            If wsOut.Range(wsOut.Cells(1, 1), wsOut.Cells(1, dataLastCol)).MergeCells Then
+                MsgBox "Output header contains merged cells. Aborting rebuild to avoid corruption.", vbExclamation
+                GoTo SkipOutputProcessing
+            End If
+
+            arr = wsOut.Range("A2", wsOut.Cells(lastRow, dataLastCol)).Value
+            Dim arrRows As Long, arrCols As Long
+            arrRows = IIf(IsArray(arr), UBound(arr, 1), 0)
+            arrCols = IIf(IsArray(arr), UBound(arr, 2), 0)
+
+            ' Validate dimensions
+            If arrCols <> dataLastCol Then
+                Debug.Print "Output: headerCols=" & dataLastCol & " arrCols=" & arrCols & " -- aborting to avoid miswrite"
+                MsgBox "Output sheet column count does not match data range. Aborting rebuild.", vbExclamation
+                GoTo SkipOutputProcessing
+            End If
+
+            ReDim keepArr(1 To arrRows, 1 To arrCols)
+            keepPtr = 0
+            For i = 1 To arrRows
+                If IsDate(arr(i, 1)) Then
+                    Dim thisDateStr As String: thisDateStr = Format(CDate(arr(i, 1)), "yyyy-mm-dd")
+                    If rebuildDates.Exists(thisDateStr) Then
+                        Dim nr As Long: nr = wsAudit.Cells(wsAudit.Rows.Count, "A").End(xlUp).Row + 1
+                        wsAudit.Cells(nr, 1).Value = "Output": wsAudit.Cells(nr, 2).Value = i + 1: wsAudit.Cells(nr, 3).Value = Now
+                        For c = 1 To arrCols: wsAudit.Cells(nr, 3 + c).Value = arr(i, c): Next c
+                    Else
+                        keepPtr = keepPtr + 1
+                        For c = 1 To arrCols: keepArr(keepPtr, c) = arr(i, c): Next c
+                    End If
+                Else
+                    keepPtr = keepPtr + 1
+                    For c = 1 To arrCols: keepArr(keepPtr, c) = arr(i, c): Next c
+                End If
+            Next i
+
+            ' Clear only the exact original range (using dataLastCol)
+            wsOut.Range("A2", wsOut.Cells(lastRow, dataLastCol)).ClearContents
+            If keepPtr > 0 Then
+                ReDim writeArr(1 To keepPtr, 1 To arrCols)
+                For i = 1 To keepPtr: For c = 1 To arrCols: writeArr(i, c) = keepArr(i, c): Next c: Next i
+                wsOut.Cells(2, 1).Resize(keepPtr, arrCols).Value = writeArr
+            End If
+        End If
+    End If
+SkipOutputProcessing:
+
+    ' Process OutputNE
+    If sheetChoice = "Both" Or sheetChoice = "OutputNE" Then
+        lastRow = wsOutNE.Cells(wsOutNE.Rows.Count, "A").End(xlUp).Row
+        If lastRow > 1 Then
+            Dim dataLastColNE As Long
+            dataLastColNE = wsOutNE.Cells(1, wsOutNE.Columns.Count).End(xlToLeft).Column
+            If wsOutNE.Range(wsOutNE.Cells(1, 1), wsOutNE.Cells(1, dataLastColNE)).MergeCells Then
+                MsgBox "OutputNE header contains merged cells. Aborting rebuild to avoid corruption.", vbExclamation
+                GoTo SkipOutputNEProcessing
+            End If
+
+            arr = wsOutNE.Range("A2", wsOutNE.Cells(lastRow, dataLastColNE)).Value
+            Dim arrRowsNE As Long, arrColsNE As Long
+            arrRowsNE = IIf(IsArray(arr), UBound(arr, 1), 0)
+            arrColsNE = IIf(IsArray(arr), UBound(arr, 2), 0)
+
+            If arrColsNE <> dataLastColNE Then
+                Debug.Print "OutputNE: headerCols=" & dataLastColNE & " arrCols=" & arrColsNE & " -- aborting to avoid miswrite"
+                MsgBox "OutputNE sheet column count does not match data range. Aborting rebuild.", vbExclamation
+                GoTo SkipOutputNEProcessing
+            End If
+
+            ReDim keepArr(1 To arrRowsNE, 1 To arrColsNE)
+            keepPtr = 0
+            For i = 1 To arrRowsNE
+                If IsDate(arr(i, 1)) Then
+                    Dim thisDateStrNE As String: thisDateStrNE = Format(CDate(arr(i, 1)), "yyyy-mm-dd")
+                    If rebuildDates.Exists(thisDateStrNE) Then
+                        Dim nr2 As Long: nr2 = wsAudit.Cells(wsAudit.Rows.Count, "A").End(xlUp).Row + 1
+                        wsAudit.Cells(nr2, 1).Value = "OutputNE": wsAudit.Cells(nr2, 2).Value = i + 1: wsAudit.Cells(nr2, 3).Value = Now
+                        For c = 1 To arrColsNE: wsAudit.Cells(nr2, 3 + c).Value = arr(i, c): Next c
+                    Else
+                        keepPtr = keepPtr + 1
+                        For c = 1 To arrColsNE: keepArr(keepPtr, c) = arr(i, c): Next c
+                    End If
+                Else
+                    keepPtr = keepPtr + 1
+                    For c = 1 To arrColsNE: keepArr(keepPtr, c) = arr(i, c): Next c
+                End If
+            Next i
+
+            wsOutNE.Range("A2", wsOutNE.Cells(lastRow, dataLastColNE)).ClearContents
+            If keepPtr > 0 Then
+                ReDim writeArr(1 To keepPtr, 1 To arrColsNE)
+                For i = 1 To keepPtr: For c = 1 To arrColsNE: writeArr(i, c) = keepArr(i, c): Next c: Next i
+                wsOutNE.Cells(2, 1).Resize(keepPtr, arrColsNE).Value = writeArr
+            End If
+        End If
+    End If
+SkipOutputNEProcessing:
+
+    ' Reprocess dated sheets in range
+    For Each localSheet In ThisWorkbook.Worksheets
+        If localSheet.Name Like "Personal Entry *" And localSheet.Name <> "Personal Entry" Then
+            parsedDate = ParseDateFromName(localSheet.Name, "Personal Entry ")
+            If parsedDate <> "" Then
+                sheetDate = CDate(parsedDate)
+                If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessActivitySheet(localSheet, parsedDate)
+            End If
+        ElseIf localSheet.Name Like "Non-Entry Hrs *" And localSheet.Name <> "Non-Entry Hrs" Then
+            parsedDate = ParseDateFromName(localSheet.Name, "Non-Entry Hrs ")
+            If parsedDate <> "" Then
+                sheetDate = CDate(parsedDate)
+                If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessNonEntrySheet(localSheet, parsedDate)
+            End If
+        End If
+    Next localSheet
+
+    ' Sort and recalc
+    Call SortSheetByDate(wsOut, 1)
+    Call SortSheetByDate(wsOutNE, 1)
+
+    ' Prepare array of dates that were rebuilt so metrics can process only those dates
+    Dim rebuiltDatesArr() As Date
+    Dim idx As Long: idx = 0
+    ReDim rebuiltDatesArr(0 To rebuildDates.Count - 1)
+    Dim kd As Variant
+    For Each kd In rebuildDates.Keys
+        rebuiltDatesArr(idx) = CDate(kd)
+        idx = idx + 1
+    Next kd
+    ' Ensure metrics routine will process these specific dates (do not skip reprocessing)
+    SkipReprocessDuringMetrics = False
+    If rebuildDates.Count > 0 Then
+        Call CalculateProductivityMetrics(Timer, rebuiltDatesArr, rebuildDates.Count)
+    Else
+        Call CalculateProductivityMetrics(Timer)
+    End If
+
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+
+    MsgBox "Rebuild complete. Audit sheet 'Rebuild_Audit' contains removed rows.", vbInformation, "Rebuild Complete"
+End Sub
+
+'==========================================================================
+'--- Helper: Sort a sheet by a date column (assumes header in row 1)
+'==========================================================================
+Private Sub SortSheetByDate(ByRef ws As Worksheet, ByVal dateCol As Long)
+    Dim lastRow As Long, lastCol As Long
+    On Error Resume Next
+    lastRow = ws.Cells(ws.Rows.Count, dateCol).End(xlUp).Row
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    If lastRow > 1 Then
+        ws.Sort.SortFields.Clear
+        ws.Sort.SortFields.Add Key:=ws.Range(ws.Cells(2, dateCol), ws.Cells(lastRow, dateCol)), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        With ws.Sort
+            .SetRange ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol))
+            .Header = xlYes
+            .MatchCase = False
+            .Orientation = xlTopToBottom
+            .Apply
+        End With
+    End If
+    On Error GoTo 0
+End Sub
+
+'==========================================================================
+'--- UI wrapper so the rebuild macro appears in the Macros dialog (no args)
+'==========================================================================
+Public Sub RebuildOutputForDateRange_UI()
+    Dim s As String, e As String
+    Dim sd As Date, ed As Date
+    Dim ans As VbMsgBoxResult
+
+    s = InputBox("Enter start date (e.g. 2025-09-01 or 9/1/2025):", "Rebuild - Start Date")
+    If s = "" Then Exit Sub
+    On Error Resume Next
+    sd = CDate(s)
+    If Err.Number <> 0 Then MsgBox "Invalid start date entered.": Err.Clear: Exit Sub
+    On Error GoTo 0
+
+    e = InputBox("Enter end date (e.g. 2025-09-03 or 9/3/2025):", "Rebuild - End Date", Format(sd, "yyyy-mm-dd"))
+    If e = "" Then Exit Sub
+    On Error Resume Next
+    ed = CDate(e)
+    If Err.Number <> 0 Then MsgBox "Invalid end date entered.": Err.Clear: Exit Sub
+    On Error GoTo 0
+
+    If ed < sd Then MsgBox "End date must be the same or after the start date.": Exit Sub
+
+    ans = MsgBox("Import dated source sheets from the source workbook before rebuilding?" & vbNewLine & vbNewLine & _
+                 "Yes = attempt import; No = rebuild from sheets already in workbook", vbYesNoCancel + vbQuestion, "Import Option")
+    If ans = vbCancel Then Exit Sub
+
+    ' Ask which sheets to process
+    Dim shChoice As String
+    Dim shAns As VbMsgBoxResult
+    shAns = MsgBox("Which sheets to rebuild?" & vbNewLine & vbNewLine & "Yes = Both; No = Output only; Cancel = OutputNE only", vbYesNoCancel + vbQuestion, "Sheet Choice")
+    If shAns = vbYes Then
+        shChoice = "Both"
+    ElseIf shAns = vbNo Then
+        shChoice = "Output"
+    Else
+        shChoice = "OutputNE"
+    End If
+
+    Call RebuildOutputForDateRange(sd, ed, (ans = vbYes), shChoice)
+End Sub
+
+' Create a physical workbook copy (saved alongside the workbook) for safe recovery
+Private Sub SaveWorkbookBackup()
+    On Error Resume Next
+    Dim ts As String: ts = Format(Now, "yyyyMMdd_HHmmss")
+    Dim baseName As String: baseName = ThisWorkbook.Name
+    Dim dotPos As Long: dotPos = InStrRev(baseName, ".")
+    Dim nameOnly As String
+    If dotPos > 0 Then nameOnly = Left(baseName, dotPos - 1) Else nameOnly = baseName
+    Dim backupName As String
+    If ThisWorkbook.Path = "" Then
+        backupName = Environ("USERPROFILE") & "\Desktop\" & nameOnly & "_wbbackup_" & ts & ".xlsm"
+    Else
+        backupName = ThisWorkbook.Path & "\" & nameOnly & "_wbbackup_" & ts & ".xlsm"
+    End If
+    ThisWorkbook.SaveCopyAs backupName
+    If Err.Number = 0 Then Debug.Print "Workbook backup saved to: " & backupName Else Debug.Print "Failed to save workbook backup: " & Err.Number
+    On Error GoTo 0
+End Sub
