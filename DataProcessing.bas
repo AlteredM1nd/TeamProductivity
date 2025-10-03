@@ -4,40 +4,6 @@
 Option Explicit
 
 '==========================================================================
-' --- Helper: Load list of headers to ignore from Config!E ---
-'==========================================================================
-Private Function LoadIgnoreHeadersDict() As Object
-    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-    dict.CompareMode = vbTextCompare
-
-    Dim wsCfg As Worksheet
-    On Error Resume Next
-    Set wsCfg = ThisWorkbook.Sheets("Config")
-    On Error GoTo 0
-    If wsCfg Is Nothing Then
-        Set LoadIgnoreHeadersDict = dict
-        Exit Function
-    End If
-
-    Dim lastRow As Long
-    lastRow = wsCfg.Cells(wsCfg.Rows.Count, "E").End(xlUp).Row
-    If lastRow < 2 Then
-        Set LoadIgnoreHeadersDict = dict
-        Exit Function
-    End If
-
-    Dim rng As Range, arr As Variant, r As Long, v As String
-    Set rng = wsCfg.Range("E2:E" & lastRow)
-    arr = rng.Value
-    For r = 1 To UBound(arr, 1)
-        v = Trim(CStr(arr(r, 1)))
-        If Len(v) > 0 Then dict(v) = 1
-    Next r
-
-    Set LoadIgnoreHeadersDict = dict
-End Function
-
-'==========================================================================
 ' --- Process "Personal Entry" Sheet ---
 '==========================================================================
 Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
@@ -51,9 +17,6 @@ Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
 
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
     dict.CompareMode = vbTextCompare
-    
-    ' Ignore headers list from Config!E
-    Dim ignoreSet As Object: Set ignoreSet = LoadIgnoreHeadersDict()
     
     Dim lkArr As Variant, lastLkRow As Long
     lastLkRow = wsLookup.Cells(wsLookup.Rows.Count, 1).End(xlUp).row
@@ -80,16 +43,13 @@ Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
         For j = FIRST_TASK_COL To lastCol
             entryCount = Val(inArr(i, j))
             If entryCount > 0 Then
-                taskName = CStr(inArr(FIRST_TASK_ROW, j))
+                taskName = inArr(FIRST_TASK_ROW, j)
                 Dim cand As String: cand = Split(taskName, " ")(0)
                 If InStr(1, VALID_REGIONS, "," & cand & ",", vbTextCompare) > 0 Then
                     region = cand: taskOnly = Mid(taskName, Len(region) + 2)
                 Else
                     region = "AR": taskOnly = taskName
                 End If
-                
-                ' If this header is configured to be ignored, skip it (supports either the full header or the base task name)
-                If ignoreSet.Exists(taskName) Or ignoreSet.Exists(taskOnly) Then GoTo SkipAdd_PE
                 If dict.Exists(taskName) Then aht = dict(taskName) Else aht = "N/A"
                 ' Clean any errors that might come from the lookup
                 If IsError(aht) Then aht = "N/A"
@@ -99,7 +59,6 @@ Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
                 outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, 1): outArr(outPtr, 3) = region
                 outArr(outPtr, 4) = taskOnly: outArr(outPtr, 5) = entryCount: outArr(outPtr, 6) = aht
                 outArr(outPtr, 7) = prodHrs: outPtr = outPtr + 1
-SkipAdd_PE:
             End If
         Next j
     Next i
@@ -129,9 +88,6 @@ Public Sub ProcessNonEntrySheet(wsInput As Worksheet, theDate As String)
     
     Dim wsOutput As Worksheet: Set wsOutput = ThisWorkbook.Sheets("OutputNE")
     
-    ' Ignore headers list from Config!E
-    Dim ignoreSet As Object: Set ignoreSet = LoadIgnoreHeadersDict()
-    
     Dim lastRow As Long
     lastRow = wsInput.Cells(wsInput.Rows.Count, NAME_COL).End(xlUp).row
     If lastRow < FIRST_NAME_ROW Then Exit Sub
@@ -148,16 +104,11 @@ Public Sub ProcessNonEntrySheet(wsInput As Worksheet, theDate As String)
         For j = FIRST_HEADER_COL To LAST_HEADER_COL
             countVal = inArr(i, j)
             If IsNumeric(countVal) And countVal > 0 Then
-                taskName = CStr(inArr(HEADER_ROW, j))
-                taskName = Replace(taskName, vbLf, " ")
-                taskName = Application.Trim(Replace(taskName, "  ", " "))
-                
-                ' If this header is configured to be ignored, skip it
-                If Not ignoreSet.Exists(taskName) Then
-                    outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, NAME_COL)
-                    outArr(outPtr, 3) = taskName: outArr(outPtr, 4) = countVal
-                    outPtr = outPtr + 1
-                End If
+                taskName = inArr(HEADER_ROW, j)
+                taskName = Replace(taskName, vbLf, " "): taskName = Application.Trim(Replace(taskName, "  ", " "))
+                outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, NAME_COL)
+                outArr(outPtr, 3) = taskName: outArr(outPtr, 4) = countVal
+                outPtr = outPtr + 1
             End If
         Next j
     Next i
@@ -215,9 +166,6 @@ Public Sub ProcessActivitySheetOptimized(wsInput As Worksheet, theDate As String
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
     dict.CompareMode = vbTextCompare
     
-    ' Ignore headers list from Config!E
-    Dim ignoreSet As Object: Set ignoreSet = LoadIgnoreHeadersDict()
-    
     Dim lkArr As Variant, lastLkRow As Long
     lastLkRow = wsLookup.Cells(wsLookup.Rows.Count, 1).End(xlUp).row
     If lastLkRow > 1 Then
@@ -269,16 +217,13 @@ Public Sub ProcessActivitySheetOptimized(wsInput As Worksheet, theDate As String
                     region = "AR": taskOnly = taskName
                 End If
                 
-                ' Skip if configured to ignore (full header or base task name)
-                If Not (ignoreSet.Exists(taskName) Or ignoreSet.Exists(taskOnly)) Then
-                    ' *** PERFORMANCE: Faster lookup ***
-                    If dict.Exists(taskName) Then aht = dict(taskName) Else aht = "N/A"
-                    If IsNumeric(aht) Then prodHrs = entryCount * aht / 60 Else prodHrs = "N/A"
-                    
-                    outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, 1): outArr(outPtr, 3) = region
-                    outArr(outPtr, 4) = taskOnly: outArr(outPtr, 5) = entryCount: outArr(outPtr, 6) = aht
-                    outArr(outPtr, 7) = prodHrs: outPtr = outPtr + 1
-                End If
+                ' *** PERFORMANCE: Faster lookup ***
+                If dict.Exists(taskName) Then aht = dict(taskName) Else aht = "N/A"
+                If IsNumeric(aht) Then prodHrs = entryCount * aht / 60 Else prodHrs = "N/A"
+                
+                outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, 1): outArr(outPtr, 3) = region
+                outArr(outPtr, 4) = taskOnly: outArr(outPtr, 5) = entryCount: outArr(outPtr, 6) = aht
+                outArr(outPtr, 7) = prodHrs: outPtr = outPtr + 1
             End If
         Next j
     Next i
