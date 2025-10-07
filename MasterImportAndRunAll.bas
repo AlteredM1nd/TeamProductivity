@@ -1877,3 +1877,129 @@ Private Sub SaveWorkbookBackup()
     If Err.Number = 0 Then Debug.Print "Workbook backup saved to: " & backupName Else Debug.Print "Failed to save workbook backup: " & Err.Number
     On Error GoTo 0
 End Sub
+
+'==========================================================================
+' --- AUDIT: LIST DATES THAT EXIST IN ONLY ONE OUTPUT SHEET ---
+'==========================================================================
+Public Sub ReportOutputDateMismatches()
+    Const REPORT_SHEET_NAME As String = "Output Date Audit"
+
+    Dim wsOutput As Worksheet
+    Dim wsOutputNE As Worksheet
+    Dim wsReport As Worksheet
+    Dim dictOutput As Object
+    Dim dictOutputNE As Object
+    Dim results() As Variant
+    Dim key As Variant
+    Dim statusMessage As String
+    Dim mismatches As Collection
+    Dim rowIndex As Long
+    Dim entry As Variant
+
+    On Error Resume Next
+    Set wsOutput = ThisWorkbook.Sheets("Output")
+    Set wsOutputNE = ThisWorkbook.Sheets("OutputNE")
+    On Error GoTo 0
+
+    If wsOutput Is Nothing Or wsOutputNE Is Nothing Then
+        MsgBox "Required sheets 'Output' and 'OutputNE' were not found.", vbCritical, "Output Date Audit"
+        Exit Sub
+    End If
+
+    Set dictOutput = CreateObject("Scripting.Dictionary")
+    Set dictOutputNE = CreateObject("Scripting.Dictionary")
+
+    Call LoadUniqueOutputDates(wsOutput, dictOutput)
+    Call LoadUniqueOutputDates(wsOutputNE, dictOutputNE)
+
+    Set mismatches = New Collection
+
+    For Each key In dictOutput.Keys
+        If Not dictOutputNE.Exists(key) Then
+            mismatches.Add Array(DateValue(CStr(key)), "Output only")
+        End If
+    Next key
+
+    For Each key In dictOutputNE.Keys
+        If Not dictOutput.Exists(key) Then
+            mismatches.Add Array(DateValue(CStr(key)), "OutputNE only")
+        End If
+    Next key
+
+    On Error Resume Next
+    Set wsReport = ThisWorkbook.Sheets(REPORT_SHEET_NAME)
+    On Error GoTo 0
+
+    If wsReport Is Nothing Then
+        Set wsReport = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsReport.Name = REPORT_SHEET_NAME
+    Else
+        wsReport.Cells.Clear
+    End If
+
+    wsReport.Range("A1").Resize(1, 2).Value = Array("Date", "Present In")
+
+    If mismatches.Count > 0 Then
+        ReDim results(1 To mismatches.Count, 1 To 2)
+
+        For rowIndex = 1 To mismatches.Count
+            entry = mismatches(rowIndex)
+            results(rowIndex, 1) = entry(0)
+            results(rowIndex, 2) = entry(1)
+        Next rowIndex
+
+        wsReport.Range("A2").Resize(mismatches.Count, 2).Value = results
+
+        wsReport.Sort.SortFields.Clear
+        wsReport.Sort.SortFields.Add Key:=wsReport.Range("A2:A" & (mismatches.Count + 1)), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        With wsReport.Sort
+            .SetRange wsReport.Range("A1:B" & (mismatches.Count + 1))
+            .Header = xlYes
+            .MatchCase = False
+            .Orientation = xlTopToBottom
+            .Apply
+        End With
+
+        statusMessage = "Found " & mismatches.Count & " date(s) with mismatched output coverage." & vbNewLine & _
+                        "See '" & REPORT_SHEET_NAME & "' for details."
+    Else
+        wsReport.Range("A2").Value = "All dates are present in both Output sheets."
+        wsReport.Range("B2").Value = "--"
+        statusMessage = "Output and OutputNE contain the same set of dates." & vbNewLine & _
+                        "A confirmation note was written to '" & REPORT_SHEET_NAME & "'."
+    End If
+
+    wsReport.Columns("A:B").AutoFit
+    wsReport.Activate
+    wsReport.Range("A1").Select
+
+    MsgBox statusMessage, vbInformation, "Output Date Audit"
+End Sub
+
+Private Sub LoadUniqueOutputDates(ByVal ws As Worksheet, ByVal dict As Object)
+    Dim lastRow As Long
+    Dim arr As Variant
+    Dim i As Long
+    Dim cellValue As Variant
+    Dim dateKey As String
+
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    If lastRow <= 1 Then Exit Sub
+
+    arr = ws.Range("A2:A" & lastRow).Value
+
+    For i = 1 To UBound(arr, 1)
+        cellValue = arr(i, 1)
+        If Not IsEmpty(cellValue) Then
+            If IsDate(cellValue) Then
+                dateKey = Format$(CDate(cellValue), "yyyy-mm-dd")
+                If Not dict.Exists(dateKey) Then dict.Add dateKey, True
+            ElseIf IsNumeric(cellValue) Then
+                If CDbl(cellValue) > 0 Then
+                    dateKey = Format$(DateSerial(1899, 12, 31) + CDbl(cellValue), "yyyy-mm-dd")
+                    If Not dict.Exists(dateKey) Then dict.Add dateKey, True
+                End If
+            End If
+        End If
+    Next i
+End Sub
