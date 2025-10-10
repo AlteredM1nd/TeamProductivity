@@ -277,28 +277,60 @@ End Sub
 
 Private Function IsTimeOffTask(ByVal taskName As String) As Boolean
     Dim normalized As String
-    normalized = LCase$(Trim$(taskName))
+    normalized = NormalizeForTimeOff(taskName)
 
     If Len(normalized) = 0 Then Exit Function
 
-    If InStr(normalized, "sick") > 0 Then
-        IsTimeOffTask = True
-        Exit Function
-    End If
+    Dim phrases As Variant
+    phrases = Array( _
+        "sick", "sick time", "sick day", "sick leave", _
+        "time away", "vacation", "vacation time away", _
+        "pto", "paid time off", "personal time off", _
+        "leave", "leave of absence")
 
-    If InStr(normalized, "away") > 0 Then
-        IsTimeOffTask = True
-        Exit Function
-    End If
+    Dim phrase As Variant
+    For Each phrase In phrases
+        If ContainsWholePhrase(normalized, CStr(phrase)) Then
+            IsTimeOffTask = True
+            Exit Function
+        End If
+    Next phrase
+End Function
 
-    If InStr(normalized, "vacation") > 0 Then
-        IsTimeOffTask = True
-        Exit Function
-    End If
+Private Function NormalizeForTimeOff(ByVal taskName As String) As String
+    Dim normalized As String
+    normalized = LCase$(Trim$(CStr(taskName)))
 
-    If InStr(normalized, "vac") > 0 And InStr(normalized, "vaccin") = 0 Then
-        IsTimeOffTask = True
-    End If
+    If Len(normalized) = 0 Then Exit Function
+
+    normalized = Replace(normalized, Chr$(160), " ")
+    normalized = Replace(normalized, "/", " ")
+    normalized = Replace(normalized, "-", " ")
+    normalized = Replace(normalized, "_", " ")
+    normalized = Replace(normalized, "\", " ")
+    normalized = Replace(normalized, ".", " ")
+    normalized = Replace(normalized, ",", " ")
+    normalized = Replace(normalized, "(", " ")
+    normalized = Replace(normalized, ")", " ")
+    normalized = Replace(normalized, "aaway", "away")
+
+    Do While InStr(normalized, "  ") > 0
+        normalized = Replace(normalized, "  ", " ")
+    Loop
+
+    NormalizeForTimeOff = Trim$(normalized)
+End Function
+
+Private Function ContainsWholePhrase(ByVal textValue As String, ByVal phrase As String) As Boolean
+    Dim haystack As String, needle As String
+    haystack = " " & textValue & " "
+    needle = " " & phrase & " "
+
+    Do While InStr(needle, "  ") > 0
+        needle = Replace(needle, "  ", " ")
+    Loop
+
+    ContainsWholePhrase = InStr(1, haystack, needle, vbTextCompare) > 0
 End Function
 
 Private Function GetKeyFromDateName(ByVal dateValue As Variant, ByVal personName As String) As String
