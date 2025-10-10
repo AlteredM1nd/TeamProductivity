@@ -313,6 +313,7 @@ Public Sub CompareOutputAndOutputNE()
                         neDetail.CompareMode = vbTextCompare
                         neDetail.Add "Date", dateValue
                         neDetail.Add "Name", personName
+                        neDetail.Add "TotalProdHours", 0#
                         Set neTasks = CreateObject("Scripting.Dictionary")
                         neTasks.CompareMode = vbTextCompare
                         neDetail.Add "Tasks", neTasks
@@ -341,8 +342,11 @@ Public Sub CompareOutputAndOutputNE()
 
                     countValNE = wsOutputNE.Cells(r, 4).Value
                     If IsNumeric(countValNE) Then
-                        neTaskInfo("Count") = neTaskInfo("Count") + CDbl(countValNE)
+                        Dim numericCount As Double
+                        numericCount = CDbl(countValNE)
+                        neTaskInfo("Count") = neTaskInfo("Count") + numericCount
                         neTaskInfo("HasNumericCount") = True
+                        detailNE("TotalProdHours") = detailNE("TotalProdHours") + numericCount
                     Else
                         countNoteNE = Trim$(CStr(countValNE))
                         If Len(countNoteNE) > 0 Then
@@ -372,7 +376,7 @@ Public Sub CompareOutputAndOutputNE()
             Dim outputNETasksText As String
 
             Set detailForNE = dictOutputNE(key)
-            totalProd = 0#
+            totalProd = detailForNE("TotalProdHours")
             outputTasksText = ""
             outputNETasksText = FormatOutputNETaskDetails(detailForNE)
 
