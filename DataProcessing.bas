@@ -306,16 +306,33 @@ Private Function IsTimeOffTask(ByVal taskName As String) As Boolean
 
     Dim phrases As Variant
     phrases = Array( _
-        "sick", "sick time", "sick day", "sick leave", _
-        "time away", "vacation", "vacation time away", _
-        "pto", "paid time off", "personal time off", _
-        "leave", "leave of absence")
+        "sick", "sick time", "sick day", "sick leave", "sicktime", "sickday", "sickleave", _
+        "time away", "timeaway", _
+        "vacation", "vacation time away", "vacationtimeaway", _
+        "pto", "paid time off", "paidtimeoff", _
+        "personal time off", "personaltimeoff", _
+        "leave", "leave of absence", "leaveofabsence", _
+        "holiday", "floating holiday", "floatingholiday", _
+        "bereavement")
+
+    Dim collapsed As String
+    collapsed = Replace(normalized, " ", "")
 
     Dim phrase As Variant
     For Each phrase In phrases
-        If ContainsWholePhrase(normalized, CStr(phrase)) Then
+        Dim phraseText As String
+        phraseText = CStr(phrase)
+        If ContainsWholePhrase(normalized, phraseText) Then
             IsTimeOffTask = True
             Exit Function
+        End If
+        Dim collapsedPhrase As String
+        collapsedPhrase = Replace(phraseText, " ", "")
+        If Len(collapsedPhrase) <> Len(phraseText) Then
+            If InStr(1, collapsed, collapsedPhrase, vbTextCompare) > 0 Then
+                IsTimeOffTask = True
+                Exit Function
+            End If
         End If
     Next phrase
 End Function
@@ -327,14 +344,17 @@ Private Function NormalizeForTimeOff(ByVal taskName As String) As String
     If Len(normalized) = 0 Then Exit Function
 
     normalized = Replace(normalized, Chr$(160), " ")
-    normalized = Replace(normalized, "/", " ")
-    normalized = Replace(normalized, "-", " ")
-    normalized = Replace(normalized, "_", " ")
-    normalized = Replace(normalized, "\", " ")
-    normalized = Replace(normalized, ".", " ")
-    normalized = Replace(normalized, ",", " ")
-    normalized = Replace(normalized, "(", " ")
-    normalized = Replace(normalized, ")", " ")
+    normalized = Replace(normalized, vbTab, " ")
+
+    Dim separators As Variant
+    separators = Array("/", "-", "_", "\", ".", ",", "(", ")", ":", ";", "&", "+", "|", "!", "?", "'", """"", "[", "]", "{", "}", _
+                       ChrW$(8211), ChrW$(8212), ChrW$(8216), ChrW$(8217))
+
+    Dim sep As Variant
+    For Each sep In separators
+        normalized = Replace(normalized, CStr(sep), " ")
+    Next sep
+
     normalized = Replace(normalized, "aaway", "away")
 
     Do While InStr(normalized, "  ") > 0
