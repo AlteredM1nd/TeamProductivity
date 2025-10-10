@@ -223,9 +223,9 @@ Public Sub CompareOutputAndOutputNE()
         personName = Trim$(CStr(wsOutputNE.Cells(r, COL_NAME).Value))
         If Len(personName) > 0 And Not IsEmpty(dateValue) Then
             Dim taskName As String
-            taskName = LCase$(Trim$(CStr(wsOutputNE.Cells(r, COL_TASK).Value)))
+            taskName = Trim$(CStr(wsOutputNE.Cells(r, COL_TASK).Value))
             If Len(taskName) > 0 Then
-                If InStr(taskName, "sick") = 0 And InStr(taskName, "away") = 0 Then
+                If Not IsTimeOffTask(taskName) Then
                     key = GetKeyFromDateName(dateValue, personName)
                     If Not dictOutputNE.Exists(key) Then dictOutputNE.Add key, Array(dateValue, personName)
                 End If
@@ -274,6 +274,32 @@ Public Sub CompareOutputAndOutputNE()
     wsReport.Columns("A:D").AutoFit
 
 End Sub
+
+Private Function IsTimeOffTask(ByVal taskName As String) As Boolean
+    Dim normalized As String
+    normalized = LCase$(Trim$(taskName))
+
+    If Len(normalized) = 0 Then Exit Function
+
+    If InStr(normalized, "sick") > 0 Then
+        IsTimeOffTask = True
+        Exit Function
+    End If
+
+    If InStr(normalized, "away") > 0 Then
+        IsTimeOffTask = True
+        Exit Function
+    End If
+
+    If InStr(normalized, "vacation") > 0 Then
+        IsTimeOffTask = True
+        Exit Function
+    End If
+
+    If InStr(normalized, "vac") > 0 And InStr(normalized, "vaccin") = 0 Then
+        IsTimeOffTask = True
+    End If
+End Function
 
 Private Function GetKeyFromDateName(ByVal dateValue As Variant, ByVal personName As String) As String
     Dim dt As Double
