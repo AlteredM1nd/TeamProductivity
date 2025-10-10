@@ -1507,6 +1507,36 @@ Public Sub RemoveDuplicatesAndRecalculate_DryRun()
 End Sub
 
 '==========================================================================
+'--- UI Macro: Recalculate dashboard and breakdown sheets only ---
+'==========================================================================
+Public Sub RecalculateProductivityReports()
+    Dim previousSkipSetting As Boolean
+    Dim metricsStartTime As Double
+
+    previousSkipSetting = SkipReprocessDuringMetrics
+    SkipReprocessDuringMetrics = True
+    metricsStartTime = Timer
+
+    On Error GoTo CleanUp
+
+    Application.StatusBar = "Recalculating productivity dashboard and breakdowns..."
+    CalculateProductivityMetrics metricsStartTime
+
+    Application.StatusBar = False
+    SkipReprocessDuringMetrics = previousSkipSetting
+
+    MsgBox "Productivity dashboard, daily, weekly, and monthly breakdowns have been refreshed.", _
+           vbInformation, "Recalculation Complete"
+    Exit Sub
+
+CleanUp:
+    Application.StatusBar = False
+    SkipReprocessDuringMetrics = previousSkipSetting
+    MsgBox "An error occurred while recalculating productivity reports: " & Err.Description, _
+           vbCritical, "Recalculation Error"
+End Sub
+
+'==========================================================================
 '--- Rebuild Output/OutputNE for a date or date range (with optional import)
 '--- Usage: Call RebuildOutputForDateRange(CDate("2025-09-01"), CDate("2025-09-03"), True)
 '==========================================================================
