@@ -1808,13 +1808,16 @@ SkipOutputNEProcessing:
         rebuiltDatesArr(idx) = CDate(kd)
         idx = idx + 1
     Next kd
-    ' Ensure metrics routine will process these specific dates (do not skip reprocessing)
-    SkipReprocessDuringMetrics = False
+    ' We already rebuilt the dated sheets above, so skip reprocessing inside the metrics routine
+    Dim previousSkipFlag As Boolean
+    previousSkipFlag = SkipReprocessDuringMetrics
+    SkipReprocessDuringMetrics = True
     If rebuildDates.Count > 0 Then
         Call CalculateProductivityMetrics(Timer, rebuiltDatesArr, rebuildDates.Count)
     Else
         Call CalculateProductivityMetrics(Timer)
     End If
+    SkipReprocessDuringMetrics = previousSkipFlag
 
     Application.StatusBar = False
     Application.ScreenUpdating = True
@@ -2032,4 +2035,291 @@ Private Sub LoadUniqueOutputDates(ByVal ws As Worksheet, ByVal dict As Object)
             End If
         End If
     Next i
+End Sub
+
+'==========================================================================
+'--- Build a detail report for a specific person/date across Output sheets ---
+'==========================================================================
+Public Sub ShowPersonDayProductivityDetail()
+    Const REPORT_SHEET_NAME As String = "PersonDayDetail"
+
+    Dim personInput As String
+    Dim dateInput As String
+    Dim targetDate As Date
+    Dim targetKey As String
+    Dim originalScreenUpdating As Boolean
+
+    Dim wsOutput As Worksheet
+    Dim wsOutputNE As Worksheet
+    Dim wsReport As Worksheet
+
+    Dim outputLastRow As Long, outputLastCol As Long
+    Dim outputHeaders As Variant, outputData As Variant
+    Dim outputMatches As Collection
+    Dim outputDateIdx As Long, outputNameIdx As Long
+    Dim outputCountIdx As Long, outputProdIdx As Long
+    Dim outputRowCount As Long
+    Dim outputTotalCount As Double
+    Dim outputTotalProdHours As Double
+
+    Dim neLastRow As Long, neLastCol As Long
+    Dim neHeaders As Variant, neData As Variant
+    Dim neMatches As Collection
+    Dim neDateIdx As Long, neNameIdx As Long
+    Dim neCountIdx As Long
+    Dim neRowCount As Long
+    Dim neTotalCount As Double
+
+    Dim i As Long, c As Long
+    Dim rowData As Variant
+    Dim rowPtr As Long
+    Dim rawDate As Variant, thisDate As Date, isDateMatch As Boolean, thisName As String
+    Dim neRawDate As Variant, neThisDate As Date, neDateMatch As Boolean, neName As String
+
+    personInput = Trim$(InputBox("Enter the team member name (as shown on the Output sheets):", _
+                                 "Person-Day Detail"))
+    If Len(personInput) = 0 Then Exit Sub
+
+    dateInput = Trim$(InputBox("Enter the work date (e.g. 2025-02-15 or 2/15/2025):", _
+                                "Person-Day Detail", Format(Date, "yyyy-mm-dd")))
+    If Len(dateInput) = 0 Then Exit Sub
+
+    On Error Resume Next
+    targetDate = CDate(dateInput)
+    If Err.Number <> 0 Then
+        MsgBox "The date provided could not be interpreted. Please try again.", vbExclamation, "Person-Day Detail"
+        Err.Clear
+        Exit Sub
+    End If
+    On Error GoTo 0
+
+    targetKey = Format$(targetDate, "yyyy-mm-dd")
+
+    originalScreenUpdating = Application.ScreenUpdating
+    Application.ScreenUpdating = False
+
+    On Error GoTo CleanUp
+
+    On Error Resume Next
+    Set wsOutput = ThisWorkbook.Sheets("Output")
+    Set wsOutputNE = ThisWorkbook.Sheets("OutputNE")
+    On Error GoTo 0
+    On Error GoTo CleanUp
+
+    If wsOutput Is Nothing Or wsOutputNE Is Nothing Then
+        Application.ScreenUpdating = originalScreenUpdating
+        MsgBox "Required sheets 'Output' and 'OutputNE' were not found.", vbCritical, "Person-Day Detail"
+        Exit Sub
+    End If
+
+    Set outputMatches = New Collection
+    outputTotalCount = 0
+    outputTotalProdHours = 0
+    outputRowCount = 0
+
+    outputLastRow = wsOutput.Cells(wsOutput.Rows.Count, 1).End(xlUp).Row
+    outputLastCol = wsOutput.Cells(1, wsOutput.Columns.Count).End(xlToLeft).Column
+
+    If outputLastRow > 1 And outputLastCol >= 2 Then
+        outputHeaders = wsOutput.Range(wsOutput.Cells(1, 1), wsOutput.Cells(1, outputLastCol)).Value
+        outputData = wsOutput.Range(wsOutput.Cells(2, 1), wsOutput.Cells(outputLastRow, outputLastCol)).Value
+
+        For c = 1 To outputLastCol
+            If StrComp(CStr(outputHeaders(1, c)), "Date", vbTextCompare) = 0 Then outputDateIdx = c
+            If StrComp(CStr(outputHeaders(1, c)), "Name", vbTextCompare) = 0 Then outputNameIdx = c
+            If StrComp(CStr(outputHeaders(1, c)), "Count", vbTextCompare) = 0 Then outputCountIdx = c
+            If StrComp(CStr(outputHeaders(1, c)), "Productive Hours", vbTextCompare) = 0 Then outputProdIdx = c
+        Next c
+
+        If outputDateIdx > 0 And outputNameIdx > 0 Then
+            For i = 1 To UBound(outputData, 1)
+                rawDate = outputData(i, outputDateIdx)
+                isDateMatch = False
+                If IsDate(rawDate) Then
+                    thisDate = CDate(rawDate)
+                    isDateMatch = (Format$(thisDate, "yyyy-mm-dd") = targetKey)
+                ElseIf IsNumeric(rawDate) Then
+                    If CDbl(rawDate) > 0 Then
+                        thisDate = DateSerial(1899, 12, 31) + CDbl(rawDate)
+                        isDateMatch = (Format$(thisDate, "yyyy-mm-dd") = targetKey)
+                    End If
+                End If
+
+                thisName = Trim$(CStr(outputData(i, outputNameIdx)))
+
+                If isDateMatch And StrComp(thisName, personInput, vbTextCompare) = 0 Then
+                    ReDim rowData(1 To outputLastCol)
+                    For c = 1 To outputLastCol
+                        rowData(c) = outputData(i, c)
+                    Next c
+                    outputMatches.Add rowData
+                    outputRowCount = outputRowCount + 1
+
+                    If outputCountIdx > 0 Then
+                        If IsNumeric(outputData(i, outputCountIdx)) Then
+                            outputTotalCount = outputTotalCount + CDbl(outputData(i, outputCountIdx))
+                        End If
+                    End If
+                    If outputProdIdx > 0 Then
+                        If IsNumeric(outputData(i, outputProdIdx)) Then
+                            outputTotalProdHours = outputTotalProdHours + CDbl(outputData(i, outputProdIdx))
+                        End If
+                    End If
+                End If
+            Next i
+        End If
+    End If
+
+    Set neMatches = New Collection
+    neTotalCount = 0
+    neRowCount = 0
+
+    neLastRow = wsOutputNE.Cells(wsOutputNE.Rows.Count, 1).End(xlUp).Row
+    neLastCol = wsOutputNE.Cells(1, wsOutputNE.Columns.Count).End(xlToLeft).Column
+
+    If neLastRow > 1 And neLastCol >= 2 Then
+        neHeaders = wsOutputNE.Range(wsOutputNE.Cells(1, 1), wsOutputNE.Cells(1, neLastCol)).Value
+        neData = wsOutputNE.Range(wsOutputNE.Cells(2, 1), wsOutputNE.Cells(neLastRow, neLastCol)).Value
+
+        For c = 1 To neLastCol
+            If StrComp(CStr(neHeaders(1, c)), "Date", vbTextCompare) = 0 Then neDateIdx = c
+            If StrComp(CStr(neHeaders(1, c)), "Name", vbTextCompare) = 0 Then neNameIdx = c
+            If StrComp(CStr(neHeaders(1, c)), "Count", vbTextCompare) = 0 Then neCountIdx = c
+        Next c
+
+        If neDateIdx > 0 And neNameIdx > 0 Then
+            For i = 1 To UBound(neData, 1)
+                neRawDate = neData(i, neDateIdx)
+                neDateMatch = False
+                If IsDate(neRawDate) Then
+                    neThisDate = CDate(neRawDate)
+                    neDateMatch = (Format$(neThisDate, "yyyy-mm-dd") = targetKey)
+                ElseIf IsNumeric(neRawDate) Then
+                    If CDbl(neRawDate) > 0 Then
+                        neThisDate = DateSerial(1899, 12, 31) + CDbl(neRawDate)
+                        neDateMatch = (Format$(neThisDate, "yyyy-mm-dd") = targetKey)
+                    End If
+                End If
+
+                neName = Trim$(CStr(neData(i, neNameIdx)))
+
+                If neDateMatch And StrComp(neName, personInput, vbTextCompare) = 0 Then
+                    ReDim rowData(1 To neLastCol)
+                    For c = 1 To neLastCol
+                        rowData(c) = neData(i, c)
+                    Next c
+                    neMatches.Add rowData
+                    neRowCount = neRowCount + 1
+
+                    If neCountIdx > 0 Then
+                        If IsNumeric(neData(i, neCountIdx)) Then
+                            neTotalCount = neTotalCount + CDbl(neData(i, neCountIdx))
+                        End If
+                    End If
+                End If
+            Next i
+        End If
+    End If
+
+    On Error Resume Next
+    Set wsReport = ThisWorkbook.Sheets(REPORT_SHEET_NAME)
+    On Error GoTo 0
+    If wsReport Is Nothing Then
+        Set wsReport = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsReport.Name = REPORT_SHEET_NAME
+    Else
+        wsReport.Cells.Clear
+    End If
+
+    On Error GoTo CleanUp
+
+    wsReport.Range("A1").Value = "Person-Day Detail"
+    wsReport.Range("A1").Font.Bold = True
+    wsReport.Range("A1").Font.Size = 14
+
+    wsReport.Range("A3").Value = "Person:"
+    wsReport.Range("B3").Value = personInput
+    wsReport.Range("A4").Value = "Date:"
+    wsReport.Range("B4").Value = targetDate
+    wsReport.Range("B4").NumberFormat = "yyyy-mm-dd"
+
+    wsReport.Range("A5").Value = "Output entries found:"
+    wsReport.Range("B5").Value = outputRowCount
+    wsReport.Range("A6").Value = "Total productive hours:"
+    wsReport.Range("B6").Value = outputTotalProdHours
+    wsReport.Range("B6").NumberFormat = "0.00"
+    wsReport.Range("A7").Value = "Total entry count:"
+    wsReport.Range("B7").Value = outputTotalCount
+    wsReport.Range("A8").Value = "Non-entry records found:"
+    wsReport.Range("B8").Value = neRowCount
+    wsReport.Range("A9").Value = "Total non-entry count:"
+    wsReport.Range("B9").Value = neTotalCount
+
+    rowPtr = 11
+
+    wsReport.Range("A" & rowPtr).Value = "Output sheet details"
+    wsReport.Range("A" & rowPtr).Font.Bold = True
+    rowPtr = rowPtr + 1
+
+    If outputMatches.Count > 0 Then
+        wsReport.Cells(rowPtr, 1).Resize(1, outputLastCol).Value = outputHeaders
+        Dim outWrite() As Variant
+        ReDim outWrite(1 To outputMatches.Count, 1 To outputLastCol)
+        For i = 1 To outputMatches.Count
+            rowData = outputMatches(i)
+            For c = 1 To outputLastCol
+                outWrite(i, c) = rowData(c)
+            Next c
+        Next i
+        wsReport.Cells(rowPtr + 1, 1).Resize(outputMatches.Count, outputLastCol).Value = outWrite
+        rowPtr = rowPtr + outputMatches.Count + 2
+    Else
+        wsReport.Cells(rowPtr, 1).Value = "No Output records found for the selected person/date."
+        rowPtr = rowPtr + 2
+    End If
+
+    rowPtr = rowPtr + 1
+    wsReport.Range("A" & rowPtr).Value = "OutputNE sheet details"
+    wsReport.Range("A" & rowPtr).Font.Bold = True
+    rowPtr = rowPtr + 1
+
+    If neMatches.Count > 0 Then
+        wsReport.Cells(rowPtr, 1).Resize(1, neLastCol).Value = neHeaders
+        Dim neWrite() As Variant
+        ReDim neWrite(1 To neMatches.Count, 1 To neLastCol)
+        For i = 1 To neMatches.Count
+            rowData = neMatches(i)
+            For c = 1 To neLastCol
+                neWrite(i, c) = rowData(c)
+            Next c
+        Next i
+        wsReport.Cells(rowPtr + 1, 1).Resize(neMatches.Count, neLastCol).Value = neWrite
+        rowPtr = rowPtr + neMatches.Count + 2
+    Else
+        wsReport.Cells(rowPtr, 1).Value = "No OutputNE records found for the selected person/date."
+        rowPtr = rowPtr + 2
+    End If
+
+    wsReport.Columns.AutoFit
+    wsReport.Activate
+    wsReport.Range("A1").Select
+
+    Application.ScreenUpdating = originalScreenUpdating
+
+    If outputMatches.Count = 0 And neMatches.Count = 0 Then
+        MsgBox "No Output or OutputNE records were found for " & personInput & " on " & targetKey & ".", _
+               vbInformation, "Person-Day Detail"
+    Else
+        MsgBox "Person-day detail report created on the '" & REPORT_SHEET_NAME & "' sheet.", _
+               vbInformation, "Person-Day Detail"
+    End If
+
+    Exit Sub
+
+CleanUp:
+    Application.ScreenUpdating = originalScreenUpdating
+    If Err.Number <> 0 Then
+        MsgBox "An unexpected error occurred while building the person-day detail report: " & Err.Description, _
+               vbCritical, "Person-Day Detail"
+    End If
 End Sub
