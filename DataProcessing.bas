@@ -347,7 +347,7 @@ Private Function NormalizeForTimeOff(ByVal taskName As String) As String
     normalized = Replace(normalized, vbTab, " ")
 
     Dim separators As Variant
-    separators = Array("/", "-", "_", "\", ".", ",", "(", ")", ":", ";", "&", "+", "|", "!", "?", "'", """"", "[", "]", "{", "}", _
+    separators = Array("/", "-", "_", "\", ".", ",", "(", ")", ":", ";", "&", "+", "|", "!", "?", "'", Chr$(34), "[", "]", "{", "}", _
                        ChrW$(8211), ChrW$(8212), ChrW$(8216), ChrW$(8217))
 
     Dim sep As Variant
