@@ -157,6 +157,134 @@ Public Sub ProcessNonEntrySheet(wsInput As Worksheet, theDate As String)
 End Sub
 
 '==========================================================================
+' --- Compare Output Sheets ---
+'==========================================================================
+Public Sub CompareOutputAndOutputNE()
+
+    Const REPORT_SHEET_NAME As String = "Output vs OutputNE"
+    Const COL_DATE As Long = 1
+    Const COL_NAME As Long = 2
+    Const COL_TASK As Long = 4
+
+    Dim wb As Workbook
+    Set wb = ThisWorkbook
+
+    Dim wsOutput As Worksheet, wsOutputNE As Worksheet
+    On Error Resume Next
+    Set wsOutput = wb.Worksheets("Output")
+    Set wsOutputNE = wb.Worksheets("OutputNE")
+    On Error GoTo 0
+
+    If wsOutput Is Nothing Then
+        MsgBox "The sheet named 'Output' could not be found.", vbExclamation
+        Exit Sub
+    End If
+
+    If wsOutputNE Is Nothing Then
+        MsgBox "The sheet named 'OutputNE' could not be found.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim wsReport As Worksheet
+    On Error Resume Next
+    Set wsReport = wb.Worksheets(REPORT_SHEET_NAME)
+    On Error GoTo 0
+
+    If wsReport Is Nothing Then
+        Set wsReport = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        wsReport.Name = REPORT_SHEET_NAME
+    Else
+        wsReport.Cells.Clear
+    End If
+
+    Dim dictOutput As Object, dictOutputNE As Object
+    Set dictOutput = CreateObject("Scripting.Dictionary")
+    Set dictOutputNE = CreateObject("Scripting.Dictionary")
+    dictOutput.CompareMode = vbTextCompare
+    dictOutputNE.CompareMode = vbTextCompare
+
+    Dim lastRow As Long, r As Long
+    Dim key As String, personName As String, dateValue As Variant
+
+    lastRow = wsOutput.Cells(wsOutput.Rows.Count, COL_DATE).End(xlUp).row
+    For r = 2 To lastRow
+        dateValue = wsOutput.Cells(r, COL_DATE).Value
+        personName = Trim$(CStr(wsOutput.Cells(r, COL_NAME).Value))
+        If Len(personName) > 0 And Not IsEmpty(dateValue) Then
+            key = GetKeyFromDateName(dateValue, personName)
+            If Not dictOutput.Exists(key) Then dictOutput.Add key, Array(dateValue, personName)
+        End If
+    Next r
+
+    lastRow = wsOutputNE.Cells(wsOutputNE.Rows.Count, COL_DATE).End(xlUp).row
+    For r = 2 To lastRow
+        dateValue = wsOutputNE.Cells(r, COL_DATE).Value
+        personName = Trim$(CStr(wsOutputNE.Cells(r, COL_NAME).Value))
+        If Len(personName) > 0 And Not IsEmpty(dateValue) Then
+            Dim taskName As String
+            taskName = LCase$(Trim$(CStr(wsOutputNE.Cells(r, COL_TASK).Value)))
+            If Len(taskName) > 0 Then
+                If InStr(taskName, "sick") = 0 And InStr(taskName, "away") = 0 Then
+                    key = GetKeyFromDateName(dateValue, personName)
+                    If Not dictOutputNE.Exists(key) Then dictOutputNE.Add key, Array(dateValue, personName)
+                End If
+            End If
+        End If
+    Next r
+
+    Dim resultData As Collection
+    Set resultData = New Collection
+
+    Dim arrVal As Variant
+    For Each key In dictOutputNE.Keys
+        If Not dictOutput.Exists(key) Then
+            arrVal = dictOutputNE(key)
+            resultData.Add Array(arrVal(0), arrVal(1), "OutputNE", "Output")
+        End If
+    Next key
+
+    For Each key In dictOutput.Keys
+        If Not dictOutputNE.Exists(key) Then
+            arrVal = dictOutput(key)
+            resultData.Add Array(arrVal(0), arrVal(1), "Output", "OutputNE")
+        End If
+    Next key
+
+    If resultData.Count = 0 Then
+        wsReport.Range("A1:D1").Value = Array("Date", "Name", "Present In", "Missing From")
+        wsReport.Range("A2").Value = "No mismatches found."
+        Exit Sub
+    End If
+
+    Dim results() As Variant
+    ReDim results(1 To resultData.Count, 1 To 4)
+
+    Dim idx As Long
+    For idx = 1 To resultData.Count
+        arrVal = resultData(idx)
+        results(idx, 1) = arrVal(0)
+        results(idx, 2) = arrVal(1)
+        results(idx, 3) = arrVal(2)
+        results(idx, 4) = arrVal(3)
+    Next idx
+
+    wsReport.Range("A1:D1").Value = Array("Date", "Name", "Present In", "Missing From")
+    wsReport.Range("A2").Resize(resultData.Count, 4).Value = results
+    wsReport.Columns("A:D").AutoFit
+
+End Sub
+
+Private Function GetKeyFromDateName(ByVal dateValue As Variant, ByVal personName As String) As String
+    Dim dt As Double
+    If IsDate(dateValue) Then
+        dt = CLng(CDate(dateValue))
+    Else
+        dt = CDbl(dateValue)
+    End If
+    GetKeyFromDateName = CStr(dt) & "|" & LCase$(Trim$(personName))
+End Function
+
+'==========================================================================
 ' --- Helper Function: Parse Date From Sheet Name ---
 '==========================================================================
 Public Function ParseDateFromName(fullName As String, prefix As String) As String
