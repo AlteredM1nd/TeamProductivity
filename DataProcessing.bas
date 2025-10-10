@@ -164,7 +164,7 @@ Public Sub CompareOutputAndOutputNE()
     Const REPORT_SHEET_NAME As String = "Output vs OutputNE"
     Const COL_DATE As Long = 1
     Const COL_NAME As Long = 2
-    Const COL_TASK As Long = 4
+    Const COL_TASK As Long = 3
 
     Dim wb As Workbook
     Set wb = ThisWorkbook
