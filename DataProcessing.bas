@@ -204,6 +204,7 @@ Public Sub CompareOutputAndOutputNE()
     dictOutputNE.CompareMode = vbTextCompare
 
     Dim lastRow As Long, r As Long
+
     Dim key As String, personName As String, dateValue As Variant
 
     lastRow = wsOutput.Cells(wsOutput.Rows.Count, COL_DATE).End(xlUp).row
