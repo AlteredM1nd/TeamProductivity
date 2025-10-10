@@ -197,11 +197,13 @@ Public Sub CompareOutputAndOutputNE()
         wsReport.Cells.Clear
     End If
 
-    Dim dictOutput As Object, dictOutputNE As Object
+    Dim dictOutput As Object, dictOutputNE As Object, dictNEStatus As Object
     Set dictOutput = CreateObject("Scripting.Dictionary")
     Set dictOutputNE = CreateObject("Scripting.Dictionary")
+    Set dictNEStatus = CreateObject("Scripting.Dictionary")
     dictOutput.CompareMode = vbTextCompare
     dictOutputNE.CompareMode = vbTextCompare
+    dictNEStatus.CompareMode = vbTextCompare
 
     Dim lastRow As Long, r As Long
 
@@ -225,10 +227,23 @@ Public Sub CompareOutputAndOutputNE()
             Dim taskName As String
             taskName = Trim$(CStr(wsOutputNE.Cells(r, COL_TASK).Value))
             If Len(taskName) > 0 Then
+                key = GetKeyFromDateName(dateValue, personName)
+
+                Dim statusInfo As Variant
+                If dictNEStatus.Exists(key) Then
+                    statusInfo = dictNEStatus(key)
+                Else
+                    statusInfo = Array(False, False) ' (hasNonTimeOff, hasAnyEntry)
+                End If
+
+                statusInfo(1) = True ' hasAnyEntry
+
                 If Not IsTimeOffTask(taskName) Then
-                    key = GetKeyFromDateName(dateValue, personName)
+                    statusInfo(0) = True ' hasNonTimeOff
                     If Not dictOutputNE.Exists(key) Then dictOutputNE.Add key, Array(dateValue, personName)
                 End If
+
+                dictNEStatus(key) = statusInfo
             End If
         End If
     Next r
@@ -246,8 +261,16 @@ Public Sub CompareOutputAndOutputNE()
 
     For Each key In dictOutput.Keys
         If Not dictOutputNE.Exists(key) Then
-            arrVal = dictOutput(key)
-            resultData.Add Array(arrVal(0), arrVal(1), "Output", "OutputNE")
+            Dim skipMismatch As Boolean
+            If dictNEStatus.Exists(key) Then
+                arrVal = dictNEStatus(key)
+                If Not arrVal(0) And arrVal(1) Then skipMismatch = True
+            End If
+
+            If Not skipMismatch Then
+                arrVal = dictOutput(key)
+                resultData.Add Array(arrVal(0), arrVal(1), "Output", "OutputNE")
+            End If
         End If
     Next key
 
