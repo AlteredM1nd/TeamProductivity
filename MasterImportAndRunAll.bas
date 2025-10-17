@@ -1549,6 +1549,7 @@ Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As D
     Dim d As Date, i As Long
     Dim localSheet As Worksheet, parsedDate As String, sheetDate As Date
     Dim hadOutputFilter As Boolean, hadOutputNEFilter As Boolean
+    Dim historicalAHT As Object
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
@@ -1564,6 +1565,11 @@ Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As D
 
     On Error Resume Next
     If sheetChoice = "Both" Or sheetChoice = "Output" Then
+        Set historicalAHT = CreateObject("Scripting.Dictionary")
+        On Error Resume Next
+        historicalAHT.CompareMode = vbTextCompare
+        On Error GoTo 0
+        On Error Resume Next
         ThisWorkbook.Sheets("Output").Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
         ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count).Name = outBackupName
         If Err.Number <> 0 Then Err.Clear
@@ -1692,6 +1698,11 @@ Public Sub RebuildOutputForDateRange(ByVal startDate As Date, ByVal endDate As D
                         Dim nr As Long: nr = wsAudit.Cells(wsAudit.Rows.Count, "A").End(xlUp).Row + 1
                         wsAudit.Cells(nr, 1).Value = "Output": wsAudit.Cells(nr, 2).Value = i + 1: wsAudit.Cells(nr, 3).Value = Now
                         For c = 1 To arrCols: wsAudit.Cells(nr, 3 + c).Value = arr(i, c): Next c
+                        If Not historicalAHT Is Nothing Then
+                            Dim histKeyOut As String
+                            histKeyOut = BuildOutputRowKey(arr(i, 1), arr(i, 2), arr(i, 3), arr(i, 4))
+                            If Not historicalAHT.Exists(histKeyOut) Then historicalAHT(histKeyOut) = arr(i, 6)
+                        End If
                     Else
                         keepPtr = keepPtr + 1
                         For c = 1 To arrCols: keepArr(keepPtr, c) = arr(i, c): Next c
@@ -1780,7 +1791,9 @@ SkipOutputNEProcessing:
                 parsedDate = ParseDateFromName(localSheet.Name, "Personal Entry ")
                 If parsedDate <> "" Then
                     sheetDate = CDate(parsedDate)
-                    If sheetDate >= startDate And sheetDate <= endDate Then Call ProcessActivitySheet(localSheet, parsedDate)
+                    If sheetDate >= startDate And sheetDate <= endDate Then
+                        Call ProcessActivitySheet(localSheet, parsedDate, historicalAHT)
+                    End If
                 End If
             End If
         End If

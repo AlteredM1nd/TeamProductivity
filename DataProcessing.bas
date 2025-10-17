@@ -33,7 +33,7 @@ End Function
 '==========================================================================
 ' --- Process "Personal Entry" Sheet ---
 '==========================================================================
-Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
+Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String, Optional historicalData As Object = Nothing)
 
     Const FIRST_TASK_ROW As Long = 2
     Const FIRST_DATA_ROW As Long = 3
@@ -65,7 +65,7 @@ Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
     Dim i As Long, j As Long, entryCount As Double, taskName As String, region As String, taskOnly As String
     Dim aht As Variant, prodHrs As Variant, missingDict As Object: Set missingDict = CreateObject("Scripting.Dictionary")
     Const VALID_REGIONS As String = ",BC,AB,CT,ON,QC,MT,YK,"
-    
+
     For i = FIRST_DATA_ROW To lastRow
         For j = FIRST_TASK_COL To lastCol
             entryCount = ParseEntryCount(inArr(i, j))
@@ -77,12 +77,28 @@ Public Sub ProcessActivitySheet(wsInput As Worksheet, theDate As String)
                 Else
                     region = "AR": taskOnly = taskName
                 End If
-                If dict.Exists(taskName) Then aht = dict(taskName) Else aht = "N/A"
+                Dim histKey As String
+                If Not historicalData Is Nothing Then
+                    histKey = BuildOutputRowKey(theDate, CStr(inArr(i, 1)), region, taskOnly)
+                    If historicalData.Exists(histKey) Then
+                        aht = historicalData(histKey)
+                    ElseIf dict.Exists(taskName) Then
+                        aht = dict(taskName)
+                    Else
+                        aht = "N/A"
+                    End If
+                Else
+                    If dict.Exists(taskName) Then aht = dict(taskName) Else aht = "N/A"
+                End If
                 ' Clean any errors that might come from the lookup
                 If IsError(aht) Then aht = "N/A"
-                
-                If IsNumeric(aht) Then prodHrs = entryCount * aht / 60 Else prodHrs = "N/A"
-                
+
+                If IsNumeric(aht) Then
+                    prodHrs = entryCount * aht / 60
+                Else
+                    prodHrs = "N/A"
+                End If
+
                 outArr(outPtr, 1) = theDate: outArr(outPtr, 2) = inArr(i, 1): outArr(outPtr, 3) = region
                 outArr(outPtr, 4) = taskOnly: outArr(outPtr, 5) = entryCount: outArr(outPtr, 6) = aht
                 outArr(outPtr, 7) = prodHrs: outPtr = outPtr + 1
@@ -631,6 +647,21 @@ Private Function GetKeyFromDateName(ByVal dateValue As Variant, ByVal personName
         dt = CDbl(dateValue)
     End If
     GetKeyFromDateName = CStr(dt) & "|" & LCase$(Trim$(personName))
+End Function
+
+'==========================================================================
+' --- Helper: Build unique key for Output rows ---
+'==========================================================================
+Public Function BuildOutputRowKey(ByVal dateValue As Variant, ByVal nameValue As String, _
+                                  ByVal regionValue As String, ByVal taskValue As String) As String
+    Dim dtPart As String
+    If IsDate(dateValue) Then
+        dtPart = Format(CDate(dateValue), "yyyy-mm-dd")
+    Else
+        dtPart = Trim$(CStr(dateValue))
+    End If
+
+    BuildOutputRowKey = LCase$(dtPart & "|" & Trim$(nameValue) & "|" & Trim$(regionValue) & "|" & Trim$(taskValue))
 End Function
 
 '==========================================================================
